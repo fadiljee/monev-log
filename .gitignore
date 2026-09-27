@@ -66,10 +66,31 @@ yarn-error.log
 # testing
 /coverage
 
+# Environment variables & API keys / Private keys
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+config.local.js
+config.local.ts
+
 # Yarn
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/sdks
-!.yarn/versions
+#.yarn/versions
+
+# Expo
+.expo/
+
+
