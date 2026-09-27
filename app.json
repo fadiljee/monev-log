@@ -10,6 +10,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.monevapp.app",
       "adaptiveIcon": {
         "backgroundColor": "#F3F4F1",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -20,6 +21,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a0d9e4ee-b4c7-43f9-ad64-06e477de5a6b"
+      }
     }
   }
 }
