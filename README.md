@@ -1,4 +1,4 @@
-# 📝 MonevApp — AI Daily Report Generator
+# MonevApp — AI Daily Report Generator
 
 > **Asisten Laporan Harian Magang Kemnaker Berbasis AI & Google Sheets Sync**
 
@@ -6,17 +6,17 @@ MonevApp adalah aplikasi React Native (Expo) yang dirancang khusus untuk membant
 
 ---
 
-## 🌟 Fitur Utama
+## Fitur Utama
 
-- ⚡ **Penyusunan Laporan AI Otomatis**: Mengubah poin-poin catatan mentah menjadi 3 bagian wajib laporan magang (*Uraian Aktivitas*, *Pembelajaran*, dan *Kendala*) dalam hitungan detik menggunakan Google Gemini AI.
-- 📋 **Salin Satu Ketukan (One-Tap Copy)**: Fitur salin per bagian atau seluruh laporan dalam satu tombol untuk kemudahan *paste* langsung ke portal Monev Kemnaker.
-- 💾 **Penyimpanan Lokal (Offline-First)**: Seluruh riwayat laporan tersimpan rapi di perangkat lokal menggunakan `@react-native-async-storage/async-storage`.
-- 📊 **Cadangan Otomatis ke Google Sheets**: Integrasi langsung dengan Google Spreadsheet pribadi melalui Webhook Google Apps Script.
-- 🎨 **Desain Logbook Kertas & Tinta**: UI minimalist berkonsep buku catatan kerja dengan warna flat solid (*zero gradient*), tipografi teknis, dan kontras tinggi.
+- **Penyusunan Laporan AI Otomatis**: Mengubah poin-poin catatan mentah menjadi 3 bagian wajib laporan magang (*Uraian Aktivitas*, *Pembelajaran*, dan *Kendala*) dalam hitungan detik menggunakan Google Gemini AI.
+- **Salin Satu Ketukan (One-Tap Copy)**: Fitur salin per bagian atau seluruh laporan dalam satu tombol untuk kemudahan *paste* langsung ke portal Monev Kemnaker.
+- **Penyimpanan Lokal (Offline-First)**: Seluruh riwayat laporan tersimpan rapi di perangkat lokal menggunakan `@react-native-async-storage/async-storage`.
+- **Cadangan Otomatis ke Google Sheets**: Integrasi langsung dengan Google Spreadsheet pribadi melalui Webhook Google Apps Script.
+- **Desain Logbook Kertas & Tinta**: UI minimalist berkonsep buku catatan kerja dengan warna flat solid (*zero gradient*), tipografi teknis, dan kontras tinggi.
 
 ---
 
-## 🛠️ Teknologi & Dependensi
+## Teknologi & Dependensi
 
 - **Framework**: [Expo](https://expo.dev) (SDK 57) / [React Native](https://reactnative.dev) (v0.86) / [React](https://react.dev) (v19)
 - **Bahasa**: [TypeScript](https://www.typescriptlang.org)
@@ -27,7 +27,7 @@ MonevApp adalah aplikasi React Native (Expo) yang dirancang khusus untuk membant
 
 ---
 
-## 📁 Struktur Proyek
+## Struktur Proyek
 
 ```text
 monevApp/
@@ -57,7 +57,7 @@ monevApp/
 
 ---
 
-## 🚀 Panduan Memulai
+## Panduan Memulai
 
 ### Prasyarat
 
@@ -96,7 +96,7 @@ Scan QR Code yang muncul di terminal menggunakan aplikasi **Expo Go** di Android
 
 ---
 
-## 📊 Penyetelan Integrasi Google Sheets
+## Penyetelan Integrasi Google Sheets
 
 Aplikasi ini mendukung penyimpanan otomatis laporan ke Google Spreadsheet pribadi.
 
@@ -112,8 +112,3 @@ Aplikasi ini mendukung penyimpanan otomatis laporan ke Google Spreadsheet pribad
 8. Buka tab **Pengaturan** di dalam aplikasi MonevApp dan tempelkan URL Web App tersebut.
 
 ---
-
-## 📄 Lisensi & Kredit
-
-Dikembangkan untuk memberikan pengalaman pembuatan laporan harian magang Kemnaker yang cepat, efisien, dan andal.
-
