@@ -93,6 +93,10 @@ config.local.ts
 # Expo
 .expo/
 
+#Eas
+.eas/
+.env
+
 # Product Requirement Specs (PRD)
 PRD/
 prd/

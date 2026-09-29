@@ -11,6 +11,8 @@
     },
     "android": {
       "package": "com.monevapp.app",
+      "jsEngine": "hermes",
+      "enableProguardInReleaseBuilds": true,
       "adaptiveIcon": {
         "backgroundColor": "#F3F4F1",
         "foregroundImage": "./assets/android-icon-foreground.png",

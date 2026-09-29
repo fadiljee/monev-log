@@ -82,7 +82,7 @@ export default function HomeScreen() {
   }, [result, prefersReducedMotion, animU, animP, animK]);
 
   const handleGenerate = async () => {
-    if (!rawInput.trim()) return;
+    if (!rawInput.trim() || isLoading) return;
 
     setIsLoading(true);
     setLoadingLabel('Menyusun laporan…');
@@ -197,7 +197,7 @@ export default function HomeScreen() {
           placeholderTextColor={colors.inkSoft}
           value={rawInput}
           onChangeText={setRawInput}
-          maxLength={500}
+          maxLength={300}
           accessible
           accessibilityLabel="Catatan kegiatan hari ini"
         />
@@ -206,10 +206,10 @@ export default function HomeScreen() {
           style={[
             typography.meta,
             styles.counter,
-            rawInput.length > 450 && { color: colors.stamp },
+            rawInput.length > 250 && { color: colors.stamp },
           ]}
         >
-          {rawInput.length} / 500
+          {rawInput.length} / 300
         </Text>
       </View>
 

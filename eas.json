@@ -12,16 +12,31 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_GEMINI_API_KEY": "YOUR_GEMINI_API_KEY",
+        "EXPO_PUBLIC_SHEETS_WEBHOOK_URL": "YOUR_WEBHOOK_URL"
       }
     },
     "apk": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_GEMINI_API_KEY": "YOUR_GEMINI_API_KEY",
+        "EXPO_PUBLIC_SHEETS_WEBHOOK_URL": "YOUR_WEBHOOK_URL"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_GEMINI_API_KEY": "YOUR_GEMINI_API_KEY",
+        "EXPO_PUBLIC_SHEETS_WEBHOOK_URL": "YOUR_WEBHOOK_URL"
+      }
     }
   },
   "submit": {
