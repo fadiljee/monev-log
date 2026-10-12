@@ -1,4 +1,5 @@
 import { registerRootComponent } from 'expo';
+import './src/services/alarm';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

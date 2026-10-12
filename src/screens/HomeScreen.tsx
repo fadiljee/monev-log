@@ -19,6 +19,7 @@ import { typography } from '../theme/typography';
 import { generateReportAi } from '../services/ai';
 import { saveReportLocal } from '../services/storage';
 import { backupToGoogleSheets } from '../services/sheets';
+import { confirmAttendanceToday } from '../services/alarm';
 import { Report } from '../types';
 
 type BackupStatus = 'idle' | 'saving' | 'success' | 'error';
@@ -104,6 +105,8 @@ export default function HomeScreen() {
 
       setResult(newReport);
       await saveReportLocal(newReport);
+      // Konfirmasi otomatis absensi hari ini & matikan sisa alarm pengingat
+      confirmAttendanceToday('logbook_submit').catch(() => {});
 
       setLoadingLabel('Menyimpan ke Sheets…');
       setBackupStatus('saving');

@@ -1,17 +1,38 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Calendar, Clock, Settings } from 'lucide-react-native';
+import * as Notifications from 'expo-notifications';
 
 import HomeScreen from './src/screens/HomeScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { colors } from './src/theme/colors';
+import {
+  initAlarmServiceAsync,
+  confirmAttendanceToday,
+  ACTION_CONFIRM_ATTENDANCE,
+} from './src/services/alarm';
 
 const Tab = createBottomTabNavigator();
 
 export default function App() {
+  useEffect(() => {
+    initAlarmServiceAsync();
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        if (response.actionIdentifier === ACTION_CONFIRM_ATTENDANCE) {
+          confirmAttendanceToday('notification_action');
+        }
+      }
+    );
+
+    return () => {
+      responseSubscription.remove();
+    };
+  }, []);
   return (
     <SafeAreaProvider>
       <NavigationContainer>
