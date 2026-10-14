@@ -14,7 +14,7 @@ const STORAGE_KEY_STATUS = '@monev_attendance_status';
 
 export const AVAILABLE_SOUNDS: AlarmSoundItem[] = [
   {
-    id: 'absen-alarm.wav',
+    id: 'absen_alarm.wav',
     label: 'Absen Alert (Kustom)',
     description: 'Nada dering kustom Monev 4-nada tegas',
   },
@@ -36,7 +36,7 @@ export const DEFAULT_ALARM_SETTINGS: AlarmSettings = {
   startMinute: 0,
   endHour: 24, // 24:00 WIB
   intervalMinutes: 30, // Nagging interval tiap 30 menit
-  sound: 'absen-alarm.wav',
+  sound: 'absen_alarm.wav',
 };
 
 // ── Notification Handler (Foreground Presentation) ──
@@ -136,7 +136,7 @@ export async function setupCategoriesAndChannelsAsync(sound: AlarmSoundOption): 
         description: 'Notifikasi pengingat absen sore dan pengisian logbook Monev',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#1F4D3D',
+        lightColor: '#14407F', // token action v2 — design.md §3.6 (era lama: #1F4D3D)
         sound: soundFile,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         bypassDnd: false,

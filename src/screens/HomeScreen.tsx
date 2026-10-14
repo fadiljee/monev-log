@@ -12,7 +12,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { Copy, CheckCircle2, Clock, AlertCircle, Settings } from 'lucide-react-native';
+import {
+  Copy,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  AlertCircle,
+  ExternalLink,
+} from 'lucide-react-native';
 
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -20,7 +27,15 @@ import { generateReportAi } from '../services/ai';
 import { saveReportLocal } from '../services/storage';
 import { backupToGoogleSheets } from '../services/sheets';
 import { confirmAttendanceToday } from '../services/alarm';
+import { openMonev } from '../config/links';
 import { Report } from '../types';
+import MonevLinkBar from '../components/MonevLinkBar';
+
+/**
+ * Syarat minimum karakter per bagian laporan harian — PRD §B, §7.3.
+ * Berdasarkan informasi Kemnaker via MagangHub. Verifikasi ke portal sebelum rilis.
+ */
+const MIN_SECTION_CHARS = 100;
 
 type BackupStatus = 'idle' | 'saving' | 'success' | 'error';
 
@@ -37,6 +52,7 @@ export default function HomeScreen() {
   const [backupStatus, setBackupStatus] = useState<BackupStatus>('idle');
   const [copiedSection, setCopiedSection] = useState<'U' | 'P' | 'K' | 'all' | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [monevError, setMonevError] = useState<string | null>(null);
 
   // Animasi "stempel" — design.md §8
   const animU = useRef(new Animated.Value(0)).current;
@@ -145,6 +161,12 @@ export default function HomeScreen() {
     copySection(text, 'all');
   };
 
+  const handleOpenMonev = async () => {
+    setMonevError(null);
+    const errMsg = await openMonev();
+    if (errMsg) setMonevError(errMsg);
+  };
+
   const getStampStyle = (anim: Animated.Value) =>
     prefersReducedMotion
       ? { opacity: anim }
@@ -176,17 +198,9 @@ export default function HomeScreen() {
           {/* Tanggal: font mono sesuai §4 "Data & meta" */}
           <Text style={[typography.meta, styles.dateText]}>{todayStr}</Text>
         </View>
-        <TouchableOpacity
-          accessible
-          accessibilityLabel="Pengaturan"
-          accessibilityRole="button"
-          style={styles.settingsBtn}
-        >
-          <Settings color={colors.inkSoft} size={22} strokeWidth={1.75} />
-        </TouchableOpacity>
       </View>
 
-      {/* ── Input Catatan — design.md §7.2 ── */}
+      {/* ── Input Catatan — design.md §7.3 ── */}
       <View
         style={[
           styles.inputContainer,
@@ -200,19 +214,19 @@ export default function HomeScreen() {
           placeholderTextColor={colors.inkSoft}
           value={rawInput}
           onChangeText={setRawInput}
-          maxLength={300}
+          maxLength={500}
           accessible
           accessibilityLabel="Catatan kegiatan hari ini"
         />
-        {/* Penghitung karakter: font mono, stamp saat mendekati batas (design.md §7.2) */}
+        {/* Penghitung karakter: font mono (design.md §7.3) */}
         <Text
           style={[
             typography.meta,
             styles.counter,
-            rawInput.length > 250 && { color: colors.stamp },
+            rawInput.length > 450 && { color: colors.warn },
           ]}
         >
-          {rawInput.length} / 300
+          {rawInput.length} / 500
         </Text>
       </View>
 
@@ -223,11 +237,28 @@ export default function HomeScreen() {
         </Text>
       )}
 
+      {/* ── Bar Portal Monev — design.md §7.5b, PRD §E.3 #2 ── */}
+      {!result && (
+        <View style={styles.monevBarWrapper}>
+          <MonevLinkBar onPress={handleOpenMonev} />
+        </View>
+      )}
+
+      {/* Toast error Monev — design.md §7.7, PRD §E.4 */}
+      {monevError && (
+        <View style={styles.errorToast}>
+          <AlertCircle color={colors.error} size={16} strokeWidth={1.75} style={{ marginRight: 8 }} />
+          <Text style={[typography.bodySmall, { color: colors.error, flex: 1 }]}>
+            {monevError}
+          </Text>
+        </View>
+      )}
+
       {/* ── Tombol Utama / Bar Progres — design.md §7.1, §9.2 ── */}
       {isGenerating ? (
-        // Bar progres flat selama generate/simpan — design.md §9.2
+        // Bar progres flat selama generate/simpan — design.md §9.2 (bukan spinner)
         <View style={styles.progressBar}>
-          <Text style={[typography.label, { color: colors.paperRaised }]}>
+          <Text style={[typography.label, { color: colors.onAction }]}>
             {loadingLabel}
           </Text>
         </View>
@@ -242,11 +273,11 @@ export default function HomeScreen() {
           accessibilityLabel="Buat laporan dari catatan"
           accessibilityState={{ disabled: !canGenerate }}
         >
-          <Text style={styles.btnPrimaryText}>Buat Laporan</Text>
+          <Text style={styles.btnPrimaryText}>Buat laporan</Text>
         </TouchableOpacity>
       )}
 
-      {/* ── Empty state link Riwayat — design.md §9.1 ── */}
+      {/* ── Empty state — design.md §9.1 ── */}
       {!result && !isGenerating && (
         <View style={styles.emptyState}>
           <Text style={typography.bodySmall}>
@@ -313,6 +344,25 @@ export default function HomeScreen() {
             />
           </View>
 
+          {/* Tombol primer "Buka Monev" — design.md §7.5, §9.3, PRD §E.3 #3 */}
+          <TouchableOpacity
+            style={styles.btnPrimary}
+            onPress={handleOpenMonev}
+            activeOpacity={0.98}
+            accessible
+            accessibilityRole="link"
+            accessibilityLabel="Buka portal Monev"
+            accessibilityHint="Membuka situs Monev di browser"
+          >
+            <ExternalLink
+              color={colors.onAction}
+              size={16}
+              strokeWidth={1.75}
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.btnPrimaryText}>Buka Monev</Text>
+          </TouchableOpacity>
+
           {/* Tombol Secondary "Buat laporan baru" — design.md §7.1, §9.3 */}
           <TouchableOpacity
             style={styles.btnSecondary}
@@ -320,6 +370,7 @@ export default function HomeScreen() {
               setResult(null);
               setRawInput('');
               setBackupStatus('idle');
+              setMonevError(null);
             }}
             activeOpacity={0.98}
             accessible
@@ -340,6 +391,7 @@ export default function HomeScreen() {
 
 /**
  * ReportEntry — satu baris entri logbook (U/P/K) — design.md §7.3
+ * Menampilkan penghitung karakter terhadap MIN_SECTION_CHARS.
  */
 function ReportEntry({
   tabLetter,
@@ -356,9 +408,13 @@ function ReportEntry({
   onCopy: () => void;
   animStyle: object;
 }) {
+  const charCount = text.length;
+  const meetsMin = charCount >= MIN_SECTION_CHARS;
+  const shortage = MIN_SECTION_CHARS - charCount;
+
   return (
     <Animated.View style={[styles.reportItem, animStyle]}>
-      {/* Tab huruf berlatar paper-raised, teks action, lebar tetap 28px — §7.3 */}
+      {/* Tab huruf berlatar action solid, teks onAction, lebar tetap 28px — §7.3 */}
       <View style={styles.tabCol}>
         <Text style={styles.tabLetter}>{tabLetter}</Text>
       </View>
@@ -376,20 +432,51 @@ function ReportEntry({
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             {isCopied ? (
-              <Text style={[typography.meta, { color: colors.action }]}>Tersalin</Text>
+              <Text style={[typography.meta, { color: colors.success }]}>Tersalin</Text>
             ) : (
               <Copy color={colors.inkSoft} size={18} strokeWidth={1.75} />
             )}
           </TouchableOpacity>
         </View>
+
         <Text style={typography.body}>{text}</Text>
+
+        {/* Penghitung syarat minimum — design.md §7.3, PRD §B */}
+        <View style={styles.charCountRow}>
+          {meetsMin ? (
+            <>
+              <CheckCircle2
+                color={colors.success}
+                size={12}
+                strokeWidth={2}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[typography.meta, { color: colors.success }]}>
+                {charCount} karakter, syarat terpenuhi
+              </Text>
+            </>
+          ) : (
+            <>
+              <AlertTriangle
+                color={colors.warn}
+                size={12}
+                strokeWidth={2}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[typography.meta, { color: colors.warn }]}>
+                {charCount} karakter, kurang {shortage}. Tambahkan detail sebelum disalin.
+              </Text>
+            </>
+          )}
+        </View>
       </View>
     </Animated.View>
   );
 }
 
 /**
- * BackupChip — status chip backup — design.md §7.4
+ * BackupChip — status chip backup — design.md §7.6
+ * Memakai token tint solid (bukan rgba) sesuai design.md §2.
  */
 function BackupChip({
   status,
@@ -402,9 +489,10 @@ function BackupChip({
     status === 'success' ? colors.success :
     status === 'error' ? colors.error : colors.warn;
 
+  // Tint solid — design.md §3 (bukan rgba/opacity berlapis)
   const chipBg =
-    status === 'success' ? 'rgba(44,107,79,0.10)' :
-    status === 'error' ? 'rgba(156,59,50,0.10)' : 'rgba(148,107,29,0.10)';
+    status === 'success' ? colors.successTint :
+    status === 'error' ? colors.errorTint : colors.warnTint;
 
   const label =
     status === 'success' ? 'Tersimpan' :
@@ -412,7 +500,7 @@ function BackupChip({
 
   return (
     <View style={[styles.statusChip, { backgroundColor: chipBg }]}>
-      {/* Ikon + teks + warna = 3 penanda aksesibilitas (design.md §7.4, §11) */}
+      {/* Ikon + teks + warna = 3 penanda aksesibilitas (design.md §7.6, §11) */}
       {status === 'success' && (
         <CheckCircle2 color={chipColor} size={13} strokeWidth={2} style={styles.chipIcon} />
       )}
@@ -424,7 +512,7 @@ function BackupChip({
       )}
       <Text style={[typography.meta, { color: chipColor }]}>{label}</Text>
 
-      {/* Tombol "Coba lagi" menyatu di kanan chip saat error — design.md §7.4 */}
+      {/* Tombol "Coba lagi" menyatu di kanan chip saat error — design.md §7.6 */}
       {status === 'error' && (
         <>
           <View style={styles.chipDivider} />
@@ -434,7 +522,7 @@ function BackupChip({
             accessibilityRole="button"
             accessibilityLabel="Coba simpan lagi"
           >
-            <Text style={[typography.meta, { color: colors.stamp }]}>Coba lagi</Text>
+            <Text style={[typography.meta, { color: colors.error }]}>Coba lagi</Text>
           </TouchableOpacity>
         </>
       )}
@@ -466,15 +554,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: colors.inkSoft,
   },
-  settingsBtn: {
-    // tap target ≥44×44 — design.md §11
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-  },
 
-  // Input catatan — design.md §7.2
+  // Input catatan — design.md §7.3
   inputContainer: {
     backgroundColor: colors.paperRaised,
     borderRadius: 8,       // elemen interaktif: 8px — design.md §5
@@ -484,7 +565,7 @@ const styles = StyleSheet.create({
   },
   inputContainerFocused: {
     borderColor: colors.action,
-    borderWidth: 1.5,
+    borderWidth: 2,        // border fokus 2px — design.md §7.3
   },
   input: {
     minHeight: 140,
@@ -498,32 +579,53 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     padding: 12,
     paddingTop: 0,
+    color: colors.inkSoft,
   },
   hint: {
     marginBottom: 16,
     paddingHorizontal: 4,
+    color: colors.inkSoft,
+  },
+
+  // Bar Portal Monev — design.md §7.5b
+  monevBarWrapper: {
+    marginBottom: 16,
+  },
+
+  // Toast error — design.md §7.7
+  errorToast: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.errorTint,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.error,
+    borderRadius: 4,
+    padding: 12,
+    marginBottom: 12,
   },
 
   // Tombol primary — design.md §7.1
   btnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.action,
     height: 44,
     borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginTop: 8,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   btnPrimaryText: {
-    color: '#FFFFFF',
+    color: colors.onAction,
     fontSize: 13,
     fontWeight: '600',
+    lineHeight: 17,
   },
   btnDisabled: {
     opacity: 0.5,
   },
 
-  // Bar progres flat — design.md §9.2 (bukan spinner)
+  // Bar progres flat — design.md §9.2 (bukan spinner/shimmer)
   progressBar: {
     backgroundColor: colors.action,
     height: 44,
@@ -531,7 +633,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
-    marginBottom: 24,
+    marginBottom: 12,
   },
 
   // Tombol secondary — design.md §7.1
@@ -542,7 +644,7 @@ const styles = StyleSheet.create({
     borderColor: colors.rule,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
+    marginBottom: 8,
     backgroundColor: 'transparent',
   },
 
@@ -588,12 +690,13 @@ const styles = StyleSheet.create({
     borderColor: colors.rule,
     borderRadius: 4,       // permukaan statis: 4px — design.md §5
     overflow: 'hidden',
+    marginBottom: 8,
   },
   reportItem: {
     flexDirection: 'row',
   },
 
-  // Kolom tab huruf U/P/K — design.md §7.3
+  // Kolom tab huruf U/P/K — design.md §7.3: "Tab berlatar action solid, huruf onAction"
   tabCol: {
     width: 28,
     borderRightWidth: 1,
@@ -601,10 +704,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     alignItems: 'center',
     paddingTop: 12,
-    backgroundColor: colors.paperRaised,
+    backgroundColor: colors.action,  // solid action — design.md §7.3
   },
   tabLetter: {
-    color: colors.action,
+    color: colors.onAction,           // putih di atas action
     fontWeight: '600',
     fontSize: 13,
     lineHeight: 17,
@@ -630,13 +733,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
 
-  // Status chip backup — design.md §7.4
+  // Baris penghitung karakter minimum — design.md §7.3, PRD §B
+  charCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+
+  // Status chip backup — design.md §7.6 (tint solid, pill)
   statusChip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: 16,      // pill — pengecualian yang disengaja (design.md §5)
+    borderRadius: 16,      // pill — design.md §5
   },
   chipIcon: {
     marginRight: 4,

@@ -10,20 +10,22 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
-import { Trash2, Copy } from 'lucide-react-native';
+import { Trash2, Copy, ExternalLink, AlertCircle } from 'lucide-react-native';
 
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { getReportsLocal, deleteReportLocal } from '../services/storage';
+import { openMonev } from '../config/links';
 import { Report } from '../types';
 
 /**
  * HistoryScreen — Riwayat laporan
- * Sesuai design.md §9.4, §7.4
+ * Sesuai design.md §9.4, §7.4, §7.5, PRD §E.3 #4
  */
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const [reports, setReports] = useState<Report[]>([]);
+  const [monevError, setMonevError] = useState<string | null>(null);
 
   const loadReports = async () => {
     const data = await getReportsLocal();
@@ -57,6 +59,12 @@ export default function HistoryScreen() {
       `Kendala yang Dialami:\n${report.obstacle}`;
     Clipboard.setStringAsync(text);
     Alert.alert('Tersalin', 'Seluruh bagian laporan telah disalin.');
+  };
+
+  const handleOpenMonev = async () => {
+    setMonevError(null);
+    const errMsg = await openMonev();
+    if (errMsg) setMonevError(errMsg);
   };
 
   /**
@@ -99,26 +107,54 @@ export default function HistoryScreen() {
       {/* Garis pemisah sebelum aksi */}
       <View style={styles.rule} />
 
-      {/* Ghost button "Salin semua" — design.md §7.1 */}
-      <TouchableOpacity
-        style={styles.copyBtn}
-        onPress={() => copyAll(item)}
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel="Salin semua bagian laporan"
-      >
-        <Copy color={colors.action} size={16} strokeWidth={1.75} style={{ marginRight: 6 }} />
-        <Text style={[typography.label, { color: colors.action }]}>Salin semua</Text>
-      </TouchableOpacity>
+      {/* Aksi kartu: salin + buka Monev — design.md §9.4, PRD §E.3 #4 */}
+      <View style={styles.cardActions}>
+        {/* Ghost button "Salin semua" — design.md §7.1 */}
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() => copyAll(item)}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel="Salin semua bagian laporan"
+        >
+          <Copy color={colors.action} size={16} strokeWidth={1.75} style={{ marginRight: 6 }} />
+          <Text style={[typography.label, { color: colors.action }]}>Salin semua</Text>
+        </TouchableOpacity>
+
+        <View style={styles.actionDivider} />
+
+        {/* Ghost button "Buka Monev" — PRD §E.3 #4 */}
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={handleOpenMonev}
+          accessible
+          accessibilityRole="link"
+          accessibilityLabel="Buka portal Monev"
+          accessibilityHint="Membuka situs Monev di browser"
+        >
+          <ExternalLink color={colors.action} size={16} strokeWidth={1.75} style={{ marginRight: 6 }} />
+          <Text style={[typography.label, { color: colors.action }]}>Buka Monev</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Judul layar — display typography, dikelola layar sendiri (headerShown: false) */}
+      {/* Judul layar — display typography */}
       <View style={styles.screenHeader}>
         <Text style={typography.display}>Riwayat</Text>
       </View>
+
+      {/* Toast error Monev — design.md §7.7, PRD §E.4 */}
+      {monevError && (
+        <View style={styles.errorToast}>
+          <AlertCircle color={colors.error} size={16} strokeWidth={1.75} style={{ marginRight: 8 }} />
+          <Text style={[typography.bodySmall, { color: colors.error, flex: 1 }]}>
+            {monevError}
+          </Text>
+        </View>
+      )}
 
       {reports.length === 0 ? (
         // Empty state — design.md §10
@@ -158,6 +194,18 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
+  // Toast error — design.md §7.7
+  errorToast: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.errorTint,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.error,
+    borderRadius: 4,
+    padding: 12,
+    marginBottom: 12,
+  },
+
   // Kartu riwayat — permukaan statis: radius 4px (design.md §5)
   card: {
     backgroundColor: colors.paperRaised,
@@ -194,13 +242,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.rule,
   },
 
-  // Ghost button salin — design.md §7.1 "Aksi ringan di dalam kartu"
-  copyBtn: {
+  // Baris aksi di bawah kartu
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 44,              // tap target minimum 44px — design.md §11
     backgroundColor: 'transparent',
+  },
+  actionDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: colors.rule,
   },
 
   // Empty state — design.md §10
@@ -217,5 +275,6 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     textAlign: 'center',
     paddingHorizontal: 32,
+    color: colors.inkSoft,
   },
 });

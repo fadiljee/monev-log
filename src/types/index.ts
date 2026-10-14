@@ -14,7 +14,7 @@ export interface AiResponse {
   obstacle: string;
 }
 
-export type AlarmSoundOption = 'absen-alarm.wav' | 'chime.wav' | 'default';
+export type AlarmSoundOption = 'absen_alarm.wav' | 'chime.wav' | 'default';
 
 export interface AlarmSoundItem {
   id: AlarmSoundOption;

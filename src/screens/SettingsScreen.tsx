@@ -589,7 +589,7 @@ const soundModalStyles = StyleSheet.create({
   },
   soundItemSelected: {
     borderColor: colors.action,
-    backgroundColor: 'rgba(31, 77, 61, 0.05)',
+    backgroundColor: colors.actionTint,  // token solid — design.md §2
   },
 });
 
@@ -613,7 +613,7 @@ const styles = StyleSheet.create({
   toastBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(44, 107, 79, 0.10)',
+    backgroundColor: colors.successTint,  // token solid — design.md §2
     borderWidth: 1,
     borderColor: colors.success,
     borderRadius: 4,
@@ -665,12 +665,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   confirmedInfoBox: {
-    backgroundColor: 'rgba(44, 107, 79, 0.06)',
+    backgroundColor: colors.successTint,  // token solid — design.md §2
     borderRadius: 4,
     padding: 10,
     marginTop: 4,
     borderWidth: 1,
-    borderColor: 'rgba(44, 107, 79, 0.20)',
+    borderColor: colors.success,          // token solid
   },
   unconfirmedInfoBox: {
     backgroundColor: colors.paper,
@@ -736,9 +736,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   chipWarn: {
-    backgroundColor: 'rgba(148, 107, 29, 0.10)',
+    backgroundColor: colors.warnTint,     // token solid — design.md §2
   },
   chipSuccess: {
-    backgroundColor: 'rgba(44, 107, 79, 0.10)',
+    backgroundColor: colors.successTint,  // token solid — design.md §2
   },
 });
