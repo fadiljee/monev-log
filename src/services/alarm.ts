@@ -60,7 +60,7 @@ export function getLocalDateString(d: Date = new Date()): string {
 }
 
 // ── Top-Level Task Definition untuk Background Action Button ──
-// Sesuai PRD §2.B & §2.C: Dieksekusi ketika pengguna menekan "✅ Sudah Absen"
+// Sesuai PRD §2.B & §2.C: Dieksekusi ketika pengguna menekan " Sudah Absen"
 // pada lockscreen/notification center saat aplikasi di latar belakang / ditutup.
 TaskManager.defineTask<any>(BACKGROUND_ATTENDANCE_TASK, async ({ data, error }) => {
   if (error) {
@@ -107,7 +107,7 @@ export async function initAlarmServiceAsync(): Promise<void> {
 }
 
 /**
- * Setup Notification Category dengan tombol aksi "✅ Sudah Absen"
+ * Setup Notification Category dengan tombol aksi " Sudah Absen"
  * dan Android Notification Channel dengan suara kustom
  */
 export async function setupCategoriesAndChannelsAsync(sound: AlarmSoundOption): Promise<string> {
@@ -115,11 +115,11 @@ export async function setupCategoriesAndChannelsAsync(sound: AlarmSoundOption): 
 
   try {
     // 1. Kategori notifikasi interaktif (Action Button)
-    // Sesuai PRD §2.C: Tombol "✅ Sudah Absen" dengan opensAppToForeground: false
+    // Sesuai PRD §2.C: Tombol " Sudah Absen" dengan opensAppToForeground: false
     await Notifications.setNotificationCategoryAsync(CATEGORY_ATTENDANCE_ALARM, [
       {
         identifier: ACTION_CONFIRM_ATTENDANCE,
-        buttonTitle: '✅ Sudah Absen',
+        buttonTitle: ' Sudah Absen',
         options: {
           opensAppToForeground: false, // Zero-friction UX: matikan alarm tanpa buka app
           isAuthenticationRequired: false,
@@ -130,7 +130,7 @@ export async function setupCategoriesAndChannelsAsync(sound: AlarmSoundOption): 
     // 2. Android Notification Channel khusus dengan level HIGH dan custom sound
     // Sesuai PRD §2.D: Level IMPORTANCE_HIGH agar suara kustom berbunyi
     if (Platform.OS === 'android') {
-      const soundFile = sound === 'default' ? undefined : sound;
+      const soundFile = sound === 'default' ? undefined : (Platform.OS === 'android' ? sound.replace(/\.[^/.]+$/, '') : sound);
       await Notifications.setNotificationChannelAsync(channelId, {
         name: `Pengingat Absen Monev (${sound === 'default' ? 'Default' : 'Kustom'})`,
         description: 'Notifikasi pengingat absen sore dan pengisian logbook Monev',
@@ -377,8 +377,8 @@ export async function scheduleAttendanceAlarmsAsync(settings: AlarmSettings): Pr
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '⏰ Waktunya Absen Sore & Isi Logbook!',
-          body: `Pengingat Absen Monev (${timeLabel} WIB). Tekan "✅ Sudah Absen" jika Anda sudah absen & input kegiatan.`,
-          sound: settings.sound !== 'default' ? settings.sound : true,
+          body: `Pengingat Absen Monev (${timeLabel} WIB). Tekan " Sudah Absen" jika Anda sudah absen & input kegiatan.`,
+          sound: settings.sound !== 'default' ? (Platform.OS === 'android' ? settings.sound.replace(/\.[^/.]+$/, '') : settings.sound) : true,
           categoryIdentifier: CATEGORY_ATTENDANCE_ALARM,
           priority: Notifications.AndroidNotificationPriority.HIGH,
           data: {
@@ -429,7 +429,7 @@ export async function scheduleNextDayAlarmAsync(settings: AlarmSettings): Promis
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '⏰ Waktunya Absen Sore & Isi Logbook!',
+        title: 'Waktunya Absen Sore & Isi Logbook!',
         body: `Pengingat Absen Monev (16:00 WIB). Jangan lupa absen sore dan isi logbook harian Anda!`,
         sound: settings.sound !== 'default' ? settings.sound : true,
         categoryIdentifier: CATEGORY_ATTENDANCE_ALARM,
@@ -510,7 +510,7 @@ export async function getActiveScheduledAlarmsAsync(): Promise<
 /**
  * Fungsi Pengujian / Uji Coba:
  * Memunculkan notifikasi alarm dalam hitungan beberapa detik dengan custom sound
- * dan tombol "✅ Sudah Absen" agar dapat langsung diuji di perangkat pengembang / user.
+ * dan tombol " Sudah Absen" agar dapat langsung diuji di perangkat pengembang / user.
  */
 export async function testTriggerAlarmAsync(delaySeconds = 3): Promise<string> {
   const hasPermission = await requestNotificationPermissionAsync();
@@ -523,8 +523,8 @@ export async function testTriggerAlarmAsync(delaySeconds = 3): Promise<string> {
 
   const identifier = await Notifications.scheduleNotificationAsync({
     content: {
-      title: '⏰ [TEST] Waktunya Absen Sore & Isi Logbook!',
-      body: 'Ini adalah uji coba Alarm Absen Monev. Tekan tombol "✅ Sudah Absen" di bawah untuk menguji pembatalan alarm!',
+      title: '[TEST] Waktunya Absen Sore & Isi Logbook!',
+      body: 'Ini adalah uji coba Alarm Absen Monev. Tekan tombol " Sudah Absen" di bawah untuk menguji pembatalan alarm!',
       sound: settings.sound !== 'default' ? settings.sound : true,
       categoryIdentifier: CATEGORY_ATTENDANCE_ALARM,
       priority: Notifications.AndroidNotificationPriority.HIGH,

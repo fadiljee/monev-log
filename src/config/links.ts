@@ -8,7 +8,8 @@ import { Linking, Clipboard } from 'react-native';
  * Pengguna dapat menggantinya di Pengaturan > Portal Monev > "Ubah alamat portal".
  * Nilai khusus pengguna tersimpan di AsyncStorage dengan kunci ini.
  */
-export const DEFAULT_MONEV_URL = 'https://maganghub.kemnaker.go.id';
+export const DEFAULT_MONEV_URL = 'https://monev.maganghub.kemnaker.go.id';
+
 
 const STORAGE_KEY = '@monev_custom_url';
 
