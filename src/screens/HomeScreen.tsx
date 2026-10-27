@@ -1,760 +1,478 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  Alert,
-  Animated,
-  AccessibilityInfo,
+  TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Clipboard from 'expo-clipboard';
+import { useFocusEffect } from '@react-navigation/native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import {
-  Copy,
+  Sun,
+  Moon,
+  Bell,
   CheckCircle2,
-  Clock,
   AlertTriangle,
-  AlertCircle,
-  ExternalLink,
+  FileText,
+  Calendar,
 } from 'lucide-react-native';
 
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { generateReportAi } from '../services/ai';
-import { saveReportLocal } from '../services/storage';
-import { backupToGoogleSheets } from '../services/sheets';
-import { confirmAttendanceToday } from '../services/alarm';
+import { shadows } from '../theme/shadows';
 import { openMonev } from '../config/links';
+import { getReportsLocal } from '../services/storage';
+import {
+  getAttendanceStatusToday,
+  confirmAttendanceToday,
+  cancelAttendanceToday,
+} from '../services/alarm';
 import { Report } from '../types';
-import MonevLinkBar from '../components/MonevLinkBar';
 
-/**
- * Syarat minimum karakter per bagian laporan harian — PRD §B, §7.3.
- * Berdasarkan informasi Kemnaker via MagangHub. Verifikasi ke portal sebelum rilis.
- */
-const MIN_SECTION_CHARS = 100;
+import TaskCard from '../components/TaskCard';
+import MonevLinkCard from '../components/MonevLinkCard';
+import SectionHeader from '../components/SectionHeader';
+import StatusChip from '../components/StatusChip';
+import Fab from '../components/Fab';
+import Toast from '../components/Toast';
 
-type BackupStatus = 'idle' | 'saving' | 'success' | 'error';
+interface HomeScreenProps {
+  onOpenCreateReport: () => void;
+  onOpenHistory: () => void;
+  onOpenNotifications?: () => void;
+}
 
-/**
- * HomeScreen — Layar utama "Hari Ini"
- * Sesuai design.md §9.1–9.3, §7, §8
- */
-export default function HomeScreen() {
+export default function HomeScreen({
+  onOpenCreateReport,
+  onOpenHistory,
+  onOpenNotifications,
+}: HomeScreenProps) {
   const insets = useSafeAreaInsets();
-  const [rawInput, setRawInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingLabel, setLoadingLabel] = useState('Menyusun laporan…');
-  const [result, setResult] = useState<Report | null>(null);
-  const [backupStatus, setBackupStatus] = useState<BackupStatus>('idle');
-  const [copiedSection, setCopiedSection] = useState<'U' | 'P' | 'K' | 'all' | null>(null);
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  const [monevError, setMonevError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'today' | 'week'>('today');
+  const [isAttendanceDone, setIsAttendanceDone] = useState(false);
+  const [isReportDone, setIsReportDone] = useState(false);
+  const [lastReport, setLastReport] = useState<Report | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [reports, setReports] = useState<Report[]>([]);
 
-  // Animasi "stempel" — design.md §8
-  const animU = useRef(new Animated.Value(0)).current;
-  const animP = useRef(new Animated.Value(0)).current;
-  const animK = useRef(new Animated.Value(0)).current;
+  // Sapaan berdasarkan jam lokal
+  const currentHour = new Date().getHours();
+  const greeting =
+    currentHour < 11
+      ? 'Selamat pagi'
+      : currentHour < 15
+      ? 'Selamat siang'
+      : currentHour < 18
+      ? 'Selamat sore'
+      : 'Selamat malam';
 
-  const todayStr = new Intl.DateTimeFormat('id-ID', {
+  const isNight = currentHour >= 18 || currentHour < 5;
+  const isAfterWork = currentHour >= 16;
+  const showAlarmWarning = isAfterWork && !isAttendanceDone;
+
+  const todayDateStr = new Intl.DateTimeFormat('id-ID', {
     weekday: 'long',
     day: 'numeric',
-    month: 'long',
+    month: 'short',
     year: 'numeric',
   }).format(new Date());
 
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setPrefersReducedMotion);
-  }, []);
-
-  useEffect(() => {
-    if (!result) return;
-
-    animU.setValue(0);
-    animP.setValue(0);
-    animK.setValue(0);
-
-    if (prefersReducedMotion) {
-      // prefers-reduced-motion: fade polos 100ms tanpa scale (design.md §8)
-      Animated.sequence([
-        Animated.timing(animU, { toValue: 1, duration: 100, useNativeDriver: true }),
-        Animated.delay(0),
-        Animated.timing(animP, { toValue: 1, duration: 100, useNativeDriver: true }),
-        Animated.delay(0),
-        Animated.timing(animK, { toValue: 1, duration: 100, useNativeDriver: true }),
-      ]).start();
-    } else {
-      // Stempel: scale 97%→100% + fade 150ms, jeda 80ms antar-entri (design.md §8)
-      Animated.sequence([
-        Animated.timing(animU, { toValue: 1, duration: 150, useNativeDriver: true }),
-        Animated.delay(80),
-        Animated.timing(animP, { toValue: 1, duration: 150, useNativeDriver: true }),
-        Animated.delay(80),
-        Animated.timing(animK, { toValue: 1, duration: 150, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [result, prefersReducedMotion, animU, animP, animK]);
-
-  const handleGenerate = async () => {
-    if (!rawInput.trim() || isLoading) return;
-
-    setIsLoading(true);
-    setLoadingLabel('Menyusun laporan…');
-    setResult(null);
-    setBackupStatus('idle');
-
+  const loadData = async () => {
     try {
-      const aiResult = await generateReportAi(rawInput);
+      const allReports = await getReportsLocal();
+      setReports(allReports);
 
-      const newReport: Report = {
-        id: Date.now().toString(),
-        date: new Date().toISOString().split('T')[0],
-        rawInput,
-        activity: aiResult.activity,
-        learning: aiResult.learning,
-        obstacle: aiResult.obstacle,
-        createdAt: new Date().toISOString(),
-      };
+      const todayIso = new Date().toISOString().split('T')[0];
+      const hasTodayReport = allReports.some((r) => r.date === todayIso);
+      setIsReportDone(hasTodayReport);
 
-      setResult(newReport);
-      await saveReportLocal(newReport);
-      // Konfirmasi otomatis absensi hari ini & matikan sisa alarm pengingat
-      confirmAttendanceToday('logbook_submit').catch(() => {});
+      if (allReports.length > 0) {
+        setLastReport(allReports[0]);
+      } else {
+        setLastReport(null);
+      }
 
-      setLoadingLabel('Menyimpan ke Sheets…');
-      setBackupStatus('saving');
-      const backupSuccess = await backupToGoogleSheets(newReport);
-      setBackupStatus(backupSuccess ? 'success' : 'error');
-    } catch {
-      Alert.alert(
-        'Laporan belum bisa dibuat',
-        'Koneksi ke Gemini gagal merespons. Catatanmu masih tersimpan — coba lagi.',
-      );
-    } finally {
-      setIsLoading(false);
+      const attendance = await getAttendanceStatusToday();
+      setIsAttendanceDone(attendance?.isConfirmed ?? false);
+    } catch {}
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, []),
+  );
+
+  const handleToggleAttendance = async () => {
+    if (isAttendanceDone) {
+      await cancelAttendanceToday();
+      setIsAttendanceDone(false);
+      setToastMessage('Penanda absen dibatalkan.');
+    } else {
+      await confirmAttendanceToday('manual_button');
+      setIsAttendanceDone(true);
+      setToastMessage('Kehadiran tercatat! Alarm hari ini dinonaktifkan.');
     }
   };
 
-  const retryBackup = async () => {
-    if (!result) return;
-    setBackupStatus('saving');
-    const ok = await backupToGoogleSheets(result);
-    setBackupStatus(ok ? 'success' : 'error');
-  };
-
-  /** Salin teks ke clipboard dan tampilkan umpan balik inline sesaat */
-  const copySection = (text: string, section: 'U' | 'P' | 'K' | 'all') => {
-    Clipboard.setStringAsync(text);
-    setCopiedSection(section);
-    setTimeout(() => setCopiedSection(null), 1500);
-  };
-
-  const copyAll = () => {
-    if (!result) return;
-    const text =
-      `Uraian Aktivitas:\n${result.activity}\n\n` +
-      `Pembelajaran yang Diperoleh:\n${result.learning}\n\n` +
-      `Kendala yang Dialami:\n${result.obstacle}`;
-    copySection(text, 'all');
+  const handleToggleReport = () => {
+    setIsReportDone((prev) => !prev);
   };
 
   const handleOpenMonev = async () => {
-    setMonevError(null);
-    const errMsg = await openMonev();
-    if (errMsg) setMonevError(errMsg);
+    const errorMsg = await openMonev();
+    if (errorMsg) {
+      setToastMessage(errorMsg);
+    }
   };
 
-  const getStampStyle = (anim: Animated.Value) =>
-    prefersReducedMotion
-      ? { opacity: anim }
-      : {
-          opacity: anim,
-          transform: [
-            {
-              scale: anim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.97, 1],
-              }),
-            },
-          ],
-        };
+  // 5 hari kerja minggu berjalan untuk tab "Minggu Ini"
+  const getWeekDays = () => {
+    const now = new Date();
+    const currentDay = now.getDay();
+    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + mondayOffset);
 
-  const isGenerating = isLoading || backupStatus === 'saving';
-  const canGenerate = rawInput.trim().length > 0 && !isGenerating;
+    const days = [];
+    const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const iso = d.toISOString().split('T')[0];
+      const hasReport = reports.some((r) => r.date === iso);
+      const isPast = d < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const isToday = iso === now.toISOString().split('T')[0];
+      days.push({
+        name: dayNames[i],
+        date: d.getDate(),
+        iso,
+        hasReport,
+        isPast,
+        isToday,
+      });
+    }
+    return days;
+  };
 
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={styles.contentContainer}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* ── Header Layar — design.md §9.1 ── */}
-      <View style={styles.screenHeader}>
-        <View>
-          <Text style={typography.display}>Hari Ini</Text>
-          {/* Tanggal: font mono sesuai §4 "Data & meta" */}
-          <Text style={[typography.meta, styles.dateText]}>{todayStr}</Text>
-        </View>
-      </View>
-
-      {/* ── Input Catatan — design.md §7.3 ── */}
-      <View
-        style={[
-          styles.inputContainer,
-          rawInput.length > 0 && styles.inputContainerFocused,
-        ]}
+    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 100 }]}
+        showsVerticalScrollIndicator={false}
       >
-        <TextInput
-          style={styles.input}
-          multiline
-          placeholder="Ketik catatan kegiatan hari ini..."
-          placeholderTextColor={colors.inkSoft}
-          value={rawInput}
-          onChangeText={setRawInput}
-          maxLength={500}
-          accessible
-          accessibilityLabel="Catatan kegiatan hari ini"
-        />
-        {/* Penghitung karakter: font mono (design.md §7.3) */}
-        <Text
-          style={[
-            typography.meta,
-            styles.counter,
-            rawInput.length > 450 && { color: colors.warn },
-          ]}
-        >
-          {rawInput.length} / 500
-        </Text>
-      </View>
-
-      {/* Hint validasi kosong — design.md §10 */}
-      {rawInput.trim().length === 0 && (
-        <Text style={[typography.bodySmall, styles.hint]}>
-          Ketik minimal beberapa kata dulu.
-        </Text>
-      )}
-
-      {/* ── Bar Portal Monev — design.md §7.5b, PRD §E.3 #2 ── */}
-      {!result && (
-        <View style={styles.monevBarWrapper}>
-          <MonevLinkBar onPress={handleOpenMonev} />
-        </View>
-      )}
-
-      {/* Toast error Monev — design.md §7.7, PRD §E.4 */}
-      {monevError && (
-        <View style={styles.errorToast}>
-          <AlertCircle color={colors.error} size={16} strokeWidth={1.75} style={{ marginRight: 8 }} />
-          <Text style={[typography.bodySmall, { color: colors.error, flex: 1 }]}>
-            {monevError}
-          </Text>
-        </View>
-      )}
-
-      {/* ── Tombol Utama / Bar Progres — design.md §7.1, §9.2 ── */}
-      {isGenerating ? (
-        // Bar progres flat selama generate/simpan — design.md §9.2 (bukan spinner)
-        <View style={styles.progressBar}>
-          <Text style={[typography.label, { color: colors.onAction }]}>
-            {loadingLabel}
-          </Text>
-        </View>
-      ) : (
-        <TouchableOpacity
-          style={[styles.btnPrimary, !canGenerate && styles.btnDisabled]}
-          onPress={handleGenerate}
-          disabled={!canGenerate}
-          activeOpacity={0.98}
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel="Buat laporan dari catatan"
-          accessibilityState={{ disabled: !canGenerate }}
-        >
-          <Text style={styles.btnPrimaryText}>Buat laporan</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* ── Empty state — design.md §9.1 ── */}
-      {!result && !isGenerating && (
-        <View style={styles.emptyState}>
-          <Text style={typography.bodySmall}>
-            Riwayat 6 hari terakhir tersimpan di Google Sheets kamu →
-          </Text>
-        </View>
-      )}
-
-      {/* ── Hasil Laporan — design.md §9.3, §7.3 ── */}
-      {result && (
-        <View style={styles.resultSection}>
-          {/* Header hasil: judul + chip status backup */}
-          <View style={styles.resultHeader}>
-            <Text style={typography.title}>Hasil Laporan</Text>
-            {backupStatus !== 'idle' && (
-              <BackupChip status={backupStatus} onRetry={retryBackup} />
-            )}
+        {/* Header: Sapaan + Tanggal + Bell Indicator */}
+        <Animated.View entering={FadeInDown.duration(350)} style={styles.topHeader}>
+          <View style={styles.greetingGroup}>
+            <View style={styles.greetingTitleRow}>
+              {isNight ? (
+                <Moon color={colors.action} size={18} strokeWidth={2} />
+              ) : (
+                <Sun color={colors.action} size={18} strokeWidth={2} />
+              )}
+              <Text style={[typography.bodySmall, styles.greetingText]}>
+                {greeting}
+              </Text>
+            </View>
+            <Text style={[typography.title, styles.dateText]}>{todayDateStr}</Text>
           </View>
 
-          <View style={styles.rule} />
-
-          {/* Bar sticky "Salin semua" — design.md §7.3 */}
           <TouchableOpacity
-            style={styles.copyAllBar}
-            onPress={copyAll}
-            activeOpacity={0.7}
+            style={styles.bellBtn}
+            onPress={onOpenNotifications}
             accessible
             accessibilityRole="button"
-            accessibilityLabel="Salin semua bagian laporan"
+            accessibilityLabel="Notifikasi"
           >
-            <Copy color={colors.action} size={16} strokeWidth={1.75} />
-            <Text style={[typography.label, { color: colors.action, marginLeft: 6 }]}>
-              {copiedSection === 'all' ? 'Tersalin' : 'Salin semua'}
+            <Bell color={colors.ink} size={20} strokeWidth={1.75} />
+            {showAlarmWarning && <View style={styles.bellAlertDot} />}
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Tab Segmen: Hari Ini vs Minggu Ini */}
+        <View style={styles.segmentBar}>
+          <TouchableOpacity
+            style={[styles.segmentTab, activeTab === 'today' && styles.segmentTabActive]}
+            onPress={() => setActiveTab('today')}
+          >
+            <Text
+              style={[
+                typography.section,
+                styles.segmentText,
+                activeTab === 'today' && styles.segmentTextActive,
+              ]}
+            >
+              Hari Ini
             </Text>
+            {activeTab === 'today' && <View style={styles.activeTabLine} />}
           </TouchableOpacity>
 
-          {/* Tabel logbook: U/P/K entries — design.md §7.3 */}
-          <View style={styles.reportList}>
-            <ReportEntry
-              tabLetter="U"
-              sectionLabel="Uraian Aktivitas"
-              text={result.activity}
-              isCopied={copiedSection === 'U'}
-              onCopy={() => copySection(result.activity, 'U')}
-              animStyle={getStampStyle(animU)}
-            />
-            <View style={styles.rule} />
-            <ReportEntry
-              tabLetter="P"
-              sectionLabel="Pembelajaran"
-              text={result.learning}
-              isCopied={copiedSection === 'P'}
-              onCopy={() => copySection(result.learning, 'P')}
-              animStyle={getStampStyle(animP)}
-            />
-            <View style={styles.rule} />
-            <ReportEntry
-              tabLetter="K"
-              sectionLabel="Kendala"
-              text={result.obstacle}
-              isCopied={copiedSection === 'K'}
-              onCopy={() => copySection(result.obstacle, 'K')}
-              animStyle={getStampStyle(animK)}
-            />
-          </View>
-
-          {/* Tombol primer "Buka Monev" — design.md §7.5, §9.3, PRD §E.3 #3 */}
           <TouchableOpacity
-            style={styles.btnPrimary}
-            onPress={handleOpenMonev}
-            activeOpacity={0.98}
-            accessible
-            accessibilityRole="link"
-            accessibilityLabel="Buka portal Monev"
-            accessibilityHint="Membuka situs Monev di browser"
+            style={[styles.segmentTab, activeTab === 'week' && styles.segmentTabActive]}
+            onPress={() => setActiveTab('week')}
           >
-            <ExternalLink
-              color={colors.onAction}
-              size={16}
-              strokeWidth={1.75}
-              style={{ marginRight: 8 }}
-            />
-            <Text style={styles.btnPrimaryText}>Buka Monev</Text>
-          </TouchableOpacity>
-
-          {/* Tombol Secondary "Buat laporan baru" — design.md §7.1, §9.3 */}
-          <TouchableOpacity
-            style={styles.btnSecondary}
-            onPress={() => {
-              setResult(null);
-              setRawInput('');
-              setBackupStatus('idle');
-              setMonevError(null);
-            }}
-            activeOpacity={0.98}
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel="Buat laporan baru"
-          >
-            <Text style={[typography.label, { color: colors.ink }]}>
-              Buat laporan baru
+            <Text
+              style={[
+                typography.section,
+                styles.segmentText,
+                activeTab === 'week' && styles.segmentTextActive,
+              ]}
+            >
+              Minggu Ini
             </Text>
+            {activeTab === 'week' && <View style={styles.activeTabLine} />}
           </TouchableOpacity>
         </View>
-      )}
-    </ScrollView>
-  );
-}
 
-/* ── Sub-komponen ──────────────────────────────────────────────── */
+        {activeTab === 'today' ? (
+          /* TAB HARI INI */
+          <Animated.View entering={FadeInDown.duration(250)}>
+            {/* Seksi Tugas Hari Ini */}
+            <SectionHeader
+              icon={<FileText color={colors.action} size={18} strokeWidth={2} />}
+              title="Tugas Hari Ini"
+              rightElement={
+                <StatusChip variant="warn" label="Batas 23.59 WIB" />
+              }
+            />
 
-/**
- * ReportEntry — satu baris entri logbook (U/P/K) — design.md §7.3
- * Menampilkan penghitung karakter terhadap MIN_SECTION_CHARS.
- */
-function ReportEntry({
-  tabLetter,
-  sectionLabel,
-  text,
-  isCopied,
-  onCopy,
-  animStyle,
-}: {
-  tabLetter: string;
-  sectionLabel: string;
-  text: string;
-  isCopied: boolean;
-  onCopy: () => void;
-  animStyle: object;
-}) {
-  const charCount = text.length;
-  const meetsMin = charCount >= MIN_SECTION_CHARS;
-  const shortage = MIN_SECTION_CHARS - charCount;
+            {/* Checklist Absen Sore */}
+            <TaskCard
+              title="Absen Sore"
+              subtitle="Alarm 16:00 – 24:00 WIB"
+              done={isAttendanceDone}
+              onToggle={handleToggleAttendance}
+              isWarning={showAlarmWarning}
+            />
 
-  return (
-    <Animated.View style={[styles.reportItem, animStyle]}>
-      {/* Tab huruf berlatar action solid, teks onAction, lebar tetap 28px — §7.3 */}
-      <View style={styles.tabCol}>
-        <Text style={styles.tabLetter}>{tabLetter}</Text>
-      </View>
+            {/* Checklist Laporan Harian */}
+            <TaskCard
+              title="Laporan Harian (Monev)"
+              subtitle={isReportDone ? 'Laporan sudah tersimpan' : 'Belum dibuat hari ini'}
+              done={isReportDone}
+              onToggle={handleToggleReport}
+              isWarning={!isReportDone && isAfterWork}
+            />
 
-      <View style={styles.reportContent}>
-        <View style={styles.reportContentHeader}>
-          <Text style={typography.label}>{sectionLabel}</Text>
-          {/* Ghost button salin — design.md §7.1, §7.3 */}
-          <TouchableOpacity
-            onPress={onCopy}
-            style={styles.copyIconBtn}
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={`Salin ${sectionLabel}`}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            {isCopied ? (
-              <Text style={[typography.meta, { color: colors.success }]}>Tersalin</Text>
+            <Text style={[typography.bodySmall, styles.disclaimerText]}>
+              Penanda ini hanya di aplikasi, bukan status resmi portal.
+            </Text>
+
+            {/* Kartu Portal Monev */}
+            <View style={{ marginTop: 18, marginBottom: 20 }}>
+              <MonevLinkCard onPress={handleOpenMonev} />
+            </View>
+
+            {/* Laporan Terakhir */}
+            <SectionHeader
+              icon={<Calendar color={colors.action} size={18} strokeWidth={2} />}
+              title="Laporan Terakhir"
+              actionLabel="Lihat semua"
+              onActionPress={onOpenHistory}
+            />
+
+            {lastReport ? (
+              <TouchableOpacity
+                style={[styles.lastReportCard, shadows.e1]}
+                onPress={onOpenHistory}
+                activeOpacity={0.85}
+              >
+                <View style={styles.lastReportHeader}>
+                  <Text style={[typography.meta, { color: colors.ink }]}>
+                    {lastReport.date}
+                  </Text>
+                  <StatusChip
+                    variant={lastReport.syncStatus === 'synced' ? 'success' : 'neutral'}
+                    label={
+                      lastReport.syncStatus === 'synced'
+                        ? 'Tersinkron'
+                        : 'Tersimpan lokal'
+                    }
+                  />
+                </View>
+                <Text
+                  style={[typography.body, styles.lastReportText]}
+                  numberOfLines={2}
+                >
+                  {lastReport.activity}
+                </Text>
+              </TouchableOpacity>
             ) : (
-              <Copy color={colors.inkSoft} size={18} strokeWidth={1.75} />
+              <View style={styles.emptyReportBox}>
+                <Text style={[typography.bodySmall, { color: colors.inkSoft }]}>
+                  Belum ada laporan tersimpan. Tekan tombol pena di bawah untuk mulai.
+                </Text>
+              </View>
             )}
-          </TouchableOpacity>
-        </View>
+          </Animated.View>
+        ) : (
+          /* TAB MINGGU INI */
+          <Animated.View entering={FadeInDown.duration(250)} style={styles.weekContainer}>
+            <Text style={[typography.section, { marginBottom: 12, color: colors.ink }]}>
+              Pelacak Hari Kerja Minggu Ini
+            </Text>
+            {getWeekDays().map((d) => (
+              <View key={d.iso} style={[styles.weekDayCard, shadows.e1]}>
+                <View style={styles.weekDayLeft}>
+                  <Text style={[typography.title, { fontSize: 16, color: colors.ink }]}>
+                    {d.name}
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Tanggal {d.date}
+                  </Text>
+                </View>
+                <View style={styles.weekDayRight}>
+                  {d.hasReport ? (
+                    <StatusChip variant="success" label="Laporan Ada" />
+                  ) : d.isPast ? (
+                    <StatusChip variant="warn" label="Terlewat" />
+                  ) : d.isToday ? (
+                    <StatusChip variant="neutral" label="Hari Ini" />
+                  ) : (
+                    <Text style={[typography.bodySmall, { color: colors.inkSoft }]}>
+                      Mendatang
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </Animated.View>
+        )}
+      </ScrollView>
 
-        <Text style={typography.body}>{text}</Text>
+      {/* Floating Action Button "Buat Laporan" */}
+      <Fab onPress={onOpenCreateReport} />
 
-        {/* Penghitung syarat minimum — design.md §7.3, PRD §B */}
-        <View style={styles.charCountRow}>
-          {meetsMin ? (
-            <>
-              <CheckCircle2
-                color={colors.success}
-                size={12}
-                strokeWidth={2}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[typography.meta, { color: colors.success }]}>
-                {charCount} karakter, syarat terpenuhi
-              </Text>
-            </>
-          ) : (
-            <>
-              <AlertTriangle
-                color={colors.warn}
-                size={12}
-                strokeWidth={2}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[typography.meta, { color: colors.warn }]}>
-                {charCount} karakter, kurang {shortage}. Tambahkan detail sebelum disalin.
-              </Text>
-            </>
-          )}
-        </View>
-      </View>
-    </Animated.View>
-  );
-}
-
-/**
- * BackupChip — status chip backup — design.md §7.6
- * Memakai token tint solid (bukan rgba) sesuai design.md §2.
- */
-function BackupChip({
-  status,
-  onRetry,
-}: {
-  status: BackupStatus;
-  onRetry: () => void;
-}) {
-  const chipColor =
-    status === 'success' ? colors.success :
-    status === 'error' ? colors.error : colors.warn;
-
-  // Tint solid — design.md §3 (bukan rgba/opacity berlapis)
-  const chipBg =
-    status === 'success' ? colors.successTint :
-    status === 'error' ? colors.errorTint : colors.warnTint;
-
-  const label =
-    status === 'success' ? 'Tersimpan' :
-    status === 'error' ? 'Gagal disimpan' : 'Menyimpan…';
-
-  return (
-    <View style={[styles.statusChip, { backgroundColor: chipBg }]}>
-      {/* Ikon + teks + warna = 3 penanda aksesibilitas (design.md §7.6, §11) */}
-      {status === 'success' && (
-        <CheckCircle2 color={chipColor} size={13} strokeWidth={2} style={styles.chipIcon} />
-      )}
-      {status === 'saving' && (
-        <Clock color={chipColor} size={13} strokeWidth={2} style={styles.chipIcon} />
-      )}
-      {status === 'error' && (
-        <AlertCircle color={chipColor} size={13} strokeWidth={2} style={styles.chipIcon} />
-      )}
-      <Text style={[typography.meta, { color: chipColor }]}>{label}</Text>
-
-      {/* Tombol "Coba lagi" menyatu di kanan chip saat error — design.md §7.6 */}
-      {status === 'error' && (
-        <>
-          <View style={styles.chipDivider} />
-          <TouchableOpacity
-            onPress={onRetry}
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel="Coba simpan lagi"
-          >
-            <Text style={[typography.meta, { color: colors.error }]}>Coba lagi</Text>
-          </TouchableOpacity>
-        </>
-      )}
+      {/* Toast Alert */}
+      <Toast
+        visible={!!toastMessage}
+        message={toastMessage || ''}
+        variant="success"
+        onHide={() => setToastMessage(null)}
+      />
     </View>
   );
 }
 
-/* ── Styles ──────────────────────────────────────────────────────── */
-
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.paper,
   },
-  contentContainer: {
-    paddingHorizontal: 20,  // margin layar 20px — design.md §5
-    paddingBottom: 40,
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
   },
-
-  // Header layar
-  screenHeader: {
+  topHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginTop: 20,
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  greetingGroup: {
+    gap: 4,
+  },
+  greetingTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  greetingText: {
+    color: colors.inkSoft,
   },
   dateText: {
-    marginTop: 4,
-    color: colors.inkSoft,
-  },
-
-  // Input catatan — design.md §7.3
-  inputContainer: {
-    backgroundColor: colors.paperRaised,
-    borderRadius: 8,       // elemen interaktif: 8px — design.md §5
-    borderWidth: 1,
-    borderColor: colors.rule,
-    marginBottom: 8,
-  },
-  inputContainerFocused: {
-    borderColor: colors.action,
-    borderWidth: 2,        // border fokus 2px — design.md §7.3
-  },
-  input: {
-    minHeight: 140,
-    padding: 16,
-    textAlignVertical: 'top',
-    fontSize: 16,
-    lineHeight: 25,
     color: colors.ink,
   },
-  counter: {
-    textAlign: 'right',
-    padding: 12,
-    paddingTop: 0,
-    color: colors.inkSoft,
+  bellBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.paperRaised,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.e1,
   },
-  hint: {
-    marginBottom: 16,
-    paddingHorizontal: 4,
-    color: colors.inkSoft,
-  },
-
-  // Bar Portal Monev — design.md §7.5b
-  monevBarWrapper: {
-    marginBottom: 16,
-  },
-
-  // Toast error — design.md §7.7
-  errorToast: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.errorTint,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.error,
+  bellAlertDot: {
+    position: 'absolute',
+    top: 10,
+    right: 11,
+    width: 8,
+    height: 8,
     borderRadius: 4,
-    padding: 12,
-    marginBottom: 12,
+    backgroundColor: colors.error,
   },
-
-  // Tombol primary — design.md §7.1
-  btnPrimary: {
+  segmentBar: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.action,
-    height: 44,
-    borderRadius: 8,
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  btnPrimaryText: {
-    color: colors.onAction,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 17,
-  },
-  btnDisabled: {
-    opacity: 0.5,
-  },
-
-  // Bar progres flat — design.md §9.2 (bukan spinner/shimmer)
-  progressBar: {
-    backgroundColor: colors.action,
-    height: 44,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 12,
-  },
-
-  // Tombol secondary — design.md §7.1
-  btnSecondary: {
-    height: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.rule,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    backgroundColor: 'transparent',
-  },
-
-  // Empty state
-  emptyState: {
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
-    paddingTop: 16,
-  },
-
-  // Section hasil
-  resultSection: {
-    marginTop: 8,
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-
-  // Garis pemisah rule 1px — design.md §5 (bukan shadow)
-  rule: {
-    height: 1,
-    backgroundColor: colors.rule,
-  },
-
-  // Bar sticky "Salin semua" — design.md §7.3
-  copyAllBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 44,
     borderBottomWidth: 1,
     borderBottomColor: colors.rule,
-    backgroundColor: colors.paperRaised,
+    marginBottom: 20,
   },
-
-  // Tabel logbook — design.md §7.3
-  reportList: {
+  segmentTab: {
+    paddingVertical: 10,
+    marginRight: 24,
+    position: 'relative',
+  },
+  segmentTabActive: {},
+  segmentText: {
+    fontSize: 16,
+    color: colors.inkSoft,
+  },
+  segmentTextActive: {
+    color: colors.action,
+  },
+  activeTabLine: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: colors.action,
+    borderRadius: 2,
+  },
+  disclaimerText: {
+    fontSize: 12,
+    color: colors.inkSoft,
+    paddingHorizontal: 4,
+    marginTop: 2,
+  },
+  lastReportCard: {
     backgroundColor: colors.paperRaised,
+    borderRadius: 20,
+    padding: 16,
+    gap: 8,
+  },
+  lastReportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  lastReportText: {
+    lineHeight: 22,
+    color: colors.ink,
+  },
+  emptyReportBox: {
+    backgroundColor: colors.paperRaised,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
     borderColor: colors.rule,
-    borderRadius: 4,       // permukaan statis: 4px — design.md §5
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  reportItem: {
-    flexDirection: 'row',
-  },
-
-  // Kolom tab huruf U/P/K — design.md §7.3: "Tab berlatar action solid, huruf onAction"
-  tabCol: {
-    width: 28,
-    borderRightWidth: 1,
-    borderRightColor: colors.rule,
-    justifyContent: 'flex-start',
     alignItems: 'center',
-    paddingTop: 12,
-    backgroundColor: colors.action,  // solid action — design.md §7.3
   },
-  tabLetter: {
-    color: colors.onAction,           // putih di atas action
-    fontWeight: '600',
-    fontSize: 13,
-    lineHeight: 17,
+  weekContainer: {
+    gap: 8,
   },
-
-  // Isi konten entri
-  reportContent: {
-    flex: 1,
-    padding: 12,
-  },
-  reportContentHeader: {
+  weekDayCard: {
+    backgroundColor: colors.paperRaised,
+    borderRadius: 16,
+    padding: 14,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
   },
-
-  // Ghost button ikon salin — tap target ≥44×44 terpenuhi via hitSlop
-  copyIconBtn: {
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
+  weekDayLeft: {
+    gap: 2,
   },
-
-  // Baris penghitung karakter minimum — design.md §7.3, PRD §B
-  charCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-
-  // Status chip backup — design.md §7.6 (tint solid, pill)
-  statusChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 16,      // pill — design.md §5
-  },
-  chipIcon: {
-    marginRight: 4,
-  },
-  chipDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: colors.rule,
-    marginHorizontal: 6,
-  },
+  weekDayRight: {},
 });

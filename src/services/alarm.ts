@@ -296,6 +296,8 @@ export async function resetAttendanceStatusToday(): Promise<AttendanceStatus> {
   return resetStatus;
 }
 
+export const cancelAttendanceToday = resetAttendanceStatusToday;
+
 /**
  * Hitung daftar waktu (slot) dari startHour:startMinute hingga endHour:00 dengan intervalMinutes
  * Misal: 16:00, 16:30, 17:00, ..., 23:30, 24:00 (atau 23:59)

@@ -74,3 +74,24 @@ export const backupToGoogleSheets = async (report: Report): Promise<boolean> => 
   }
 };
 
+/**
+ * Test connectivity to Google Sheets Webhook
+ */
+export const testSheetsConnection = async (url: string): Promise<boolean> => {
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+      body: JSON.stringify({
+        ping: true,
+        test: true,
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+

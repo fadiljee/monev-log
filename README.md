@@ -35,10 +35,12 @@ monevApp/
 ├── app.json                    # Konfigurasi Expo project
 ├── package.json                # Dependensi & script proyek
 ├── tsconfig.json               # Konfigurasi TypeScript
+├── redesign-v2.md              # Master PRD & Design System v2 (Tema Kemnaker)
 ├── google-apps-script/
 │   └── Code.gs                 # Script Web App Webhook untuk integrasi Google Sheets
 ├── PRD/
-│   └── design.md               # Spesifikasi desain visual & filosofi UI/UX
+│   ├── prd.md                  # Dokumen Kebutuhan Produk (PRD) Terpadu
+│   └── archive/                # Arsip PRD & spesifikasi historis
 └── src/
     ├── screens/
     │   ├── HomeScreen.tsx      # Layar input catatan mentah & hasil laporan AI

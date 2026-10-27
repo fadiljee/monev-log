@@ -3,33 +3,58 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
+  TextInput,
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import * as Clipboard from 'expo-clipboard';
-import { Trash2, Copy, ExternalLink, AlertCircle } from 'lucide-react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import {
+  Search,
+  Plus,
+  ChevronRight,
+  FileText,
+  CheckCircle2,
+  Trash2,
+  ArrowLeft,
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
+import { shadows } from '../theme/shadows';
 import { getReportsLocal, deleteReportLocal } from '../services/storage';
-import { openMonev } from '../config/links';
 import { Report } from '../types';
+import ProgressRing from '../components/ProgressRing';
+import HistoryDetailScreen from './HistoryDetailScreen';
 
-/**
- * HistoryScreen — Riwayat laporan
- * Sesuai design.md §9.4, §7.4, §7.5, PRD §E.3 #4
- */
-export default function HistoryScreen() {
+interface HistoryScreenProps {
+  onBack?: () => void;
+  onOpenCreateReport?: () => void;
+}
+
+interface MonthlyGroup {
+  monthKey: string; // "Oktober 2026"
+  reports: Report[];
+  completionPercentage: number;
+}
+
+export default function HistoryScreen({
+  onBack,
+  onOpenCreateReport,
+}: HistoryScreenProps) {
   const insets = useSafeAreaInsets();
   const [reports, setReports] = useState<Report[]>([]);
-  const [monevError, setMonevError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
   const loadReports = async () => {
-    const data = await getReportsLocal();
-    setReports(data);
+    try {
+      const all = await getReportsLocal();
+      setReports(all);
+    } catch {}
   };
 
   useFocusEffect(
@@ -38,243 +63,343 @@ export default function HistoryScreen() {
     }, []),
   );
 
+  // Filter reports
+  const filtered = reports.filter((r) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      r.activity?.toLowerCase().includes(q) ||
+      r.learning?.toLowerCase().includes(q) ||
+      r.obstacle?.toLowerCase().includes(q) ||
+      r.date?.includes(q)
+    );
+  });
+
+  // Kelompokkan per bulan
+  const groupedMonths: MonthlyGroup[] = [];
+  const monthMap = new Map<string, Report[]>();
+
+  filtered.forEach((r) => {
+    const d = new Date(r.date);
+    const monthKey = new Intl.DateTimeFormat('id-ID', {
+      month: 'long',
+      year: 'numeric',
+    }).format(d);
+
+    if (!monthMap.has(monthKey)) {
+      monthMap.set(monthKey, []);
+    }
+    monthMap.get(monthKey)!.push(r);
+  });
+
+  monthMap.forEach((repList, monthKey) => {
+    // Anggap 22 hari kerja rata-rata per bulan
+    const pct = Math.min(1, repList.length / 22);
+    groupedMonths.push({
+      monthKey,
+      reports: repList,
+      completionPercentage: pct,
+    });
+  });
+
   const handleDelete = (id: string) => {
-    Alert.alert('Hapus Laporan', 'Hapus riwayat ini?', [
+    Alert.alert('Hapus Laporan', 'Hapus laporan tanggal ini?', [
       { text: 'Batal', style: 'cancel' },
       {
         text: 'Hapus',
         style: 'destructive',
         onPress: async () => {
-          await deleteReportLocal(id);
-          loadReports();
+          try {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            await deleteReportLocal(id);
+            loadReports();
+          } catch {}
         },
       },
     ]);
   };
 
-  const copyAll = (report: Report) => {
-    const text =
-      `Uraian Aktivitas:\n${report.activity}\n\n` +
-      `Pembelajaran yang Diperoleh:\n${report.learning}\n\n` +
-      `Kendala yang Dialami:\n${report.obstacle}`;
-    Clipboard.setStringAsync(text);
-    Alert.alert('Tersalin', 'Seluruh bagian laporan telah disalin.');
-  };
-
-  const handleOpenMonev = async () => {
-    setMonevError(null);
-    const errMsg = await openMonev();
-    if (errMsg) setMonevError(errMsg);
-  };
-
-  /**
-   * Format tanggal dalam format mono — design.md §9.4
-   * Contoh: "27 Sep 2026"
-   */
-  const formatDate = (dateStr: string) => {
-    return new Intl.DateTimeFormat('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(dateStr));
-  };
-
-  const renderItem = ({ item }: { item: Report }) => (
-    <View style={styles.card}>
-      {/* Header kartu: tanggal mono + tombol hapus */}
-      <View style={styles.cardHeader}>
-        {/* Tanggal: font mono sesuai §9.4, §4 */}
-        <Text style={[typography.meta, { color: colors.ink }]}>
-          {formatDate(item.date)}
-        </Text>
-        <TouchableOpacity
-          onPress={() => handleDelete(item.id)}
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel="Hapus laporan ini"
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={styles.deleteBtn}
-        >
-          <Trash2 color={colors.inkSoft} size={18} strokeWidth={1.75} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Preview satu baris terpotong — design.md §9.4 */}
-      <Text style={styles.previewText} numberOfLines={1}>
-        {item.activity}
-      </Text>
-
-      {/* Garis pemisah sebelum aksi */}
-      <View style={styles.rule} />
-
-      {/* Aksi kartu: salin + buka Monev — design.md §9.4, PRD §E.3 #4 */}
-      <View style={styles.cardActions}>
-        {/* Ghost button "Salin semua" — design.md §7.1 */}
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => copyAll(item)}
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel="Salin semua bagian laporan"
-        >
-          <Copy color={colors.action} size={16} strokeWidth={1.75} style={{ marginRight: 6 }} />
-          <Text style={[typography.label, { color: colors.action }]}>Salin semua</Text>
-        </TouchableOpacity>
-
-        <View style={styles.actionDivider} />
-
-        {/* Ghost button "Buka Monev" — PRD §E.3 #4 */}
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={handleOpenMonev}
-          accessible
-          accessibilityRole="link"
-          accessibilityLabel="Buka portal Monev"
-          accessibilityHint="Membuka situs Monev di browser"
-        >
-          <ExternalLink color={colors.action} size={16} strokeWidth={1.75} style={{ marginRight: 6 }} />
-          <Text style={[typography.label, { color: colors.action }]}>Buka Monev</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  // Jika sedang melihat detail laporan
+  if (selectedReport) {
+    return (
+      <HistoryDetailScreen
+        report={selectedReport}
+        onBack={() => {
+          setSelectedReport(null);
+          loadReports();
+        }}
+        onDeleted={() => {
+          setSelectedReport(null);
+          loadReports();
+        }}
+      />
+    );
+  }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Judul layar — display typography */}
-      <View style={styles.screenHeader}>
-        <Text style={typography.display}>Riwayat</Text>
+    <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
+      {/* Header bar */}
+      <View style={styles.headerBar}>
+        {onBack ? (
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel="Kembali"
+          >
+            <ArrowLeft color={colors.ink} size={22} strokeWidth={2} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
+        <Text style={[typography.title, styles.headerTitle]}>
+          Riwayat Laporan
+        </Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Toast error Monev — design.md §7.7, PRD §E.4 */}
-      {monevError && (
-        <View style={styles.errorToast}>
-          <AlertCircle color={colors.error} size={16} strokeWidth={1.75} style={{ marginRight: 8 }} />
-          <Text style={[typography.bodySmall, { color: colors.error, flex: 1 }]}>
-            {monevError}
-          </Text>
-        </View>
-      )}
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + 80 },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Tombol Buat Laporan Hari Ini */}
+        {onOpenCreateReport && (
+          <TouchableOpacity
+            style={[styles.btnNewReport, shadows.e1]}
+            onPress={onOpenCreateReport}
+            activeOpacity={0.85}
+          >
+            <Plus color={colors.action} size={18} strokeWidth={2} />
+            <Text style={styles.btnNewReportText}>Buat Laporan Hari Ini</Text>
+          </TouchableOpacity>
+        )}
 
-      {reports.length === 0 ? (
-        // Empty state — design.md §10
-        <View style={styles.emptyContainer}>
-          <Text style={[typography.title, styles.emptyTitle]}>Belum ada laporan</Text>
-          <Text style={[typography.bodySmall, styles.emptySubtitle]}>
-            Laporan yang kamu buat akan muncul di sini.
-          </Text>
+        {/* Search Bar Pill */}
+        <View style={styles.searchBar}>
+          <Search color={colors.inkSoft} size={18} strokeWidth={2} />
+          <TextInput
+            style={[typography.body, styles.searchInput]}
+            placeholder="Cari aktivitas atau kendala..."
+            placeholderTextColor={colors.inkSoft}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
         </View>
-      ) : (
-        <FlatList
-          data={reports}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+
+        {/* Daftar Grup Per Bulan */}
+        {groupedMonths.map((group, gIdx) => (
+          <Animated.View
+            key={group.monthKey}
+            entering={FadeInDown.delay(gIdx * 60).duration(300)}
+            style={[styles.monthCard, shadows.e1]}
+          >
+            {/* Header Bulan + Cincin Kelengkapan */}
+            <View style={styles.monthHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[typography.section, styles.monthTitle]}>
+                  {group.monthKey}
+                </Text>
+                <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                  {group.reports.length} laporan tercatat
+                </Text>
+              </View>
+
+              <ProgressRing
+                size={54}
+                progress={group.completionPercentage}
+                label={`${Math.round(group.completionPercentage * 100)}%`}
+                strokeWidth={5}
+              />
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* List item laporan */}
+            {group.reports.map((item, idx) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.itemRow}
+                onPress={() => setSelectedReport(item)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.checkIcon}>
+                  <CheckCircle2 color={colors.action} size={18} strokeWidth={2} />
+                </View>
+                <View style={styles.itemContent}>
+                  <Text style={[typography.meta, styles.itemDate]}>
+                    {new Intl.DateTimeFormat('id-ID', {
+                      day: 'numeric',
+                      month: 'short',
+                    }).format(new Date(item.date))}
+                  </Text>
+                  <Text style={[typography.body, styles.itemActivity]} numberOfLines={1}>
+                    {item.activity}
+                  </Text>
+                </View>
+                <ChevronRight color={colors.inkSoft} size={16} strokeWidth={2} />
+              </TouchableOpacity>
+            ))}
+          </Animated.View>
+        ))}
+
+        {reports.length === 0 && (
+          <View style={styles.emptyWrap}>
+            <FileText color={colors.actionSoft} size={48} strokeWidth={1.5} />
+            <Text style={[typography.title, styles.emptyTitle]}>
+              Belum Ada Laporan
+            </Text>
+            <Text style={[typography.bodySmall, styles.emptyDesc]}>
+              Catatan yang kamu susun akan tersimpan rapi di sini dan siap dicadangkan.
+            </Text>
+            {onOpenCreateReport && (
+              <TouchableOpacity
+                style={styles.btnStartNow}
+                onPress={onOpenCreateReport}
+              >
+                <Text style={styles.btnStartNowText}>Mulai Sekarang</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
-/* ── Styles ──────────────────────────────────────────────────────── */
-
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.paper,
-    paddingHorizontal: 20,  // margin layar 20px — design.md §5
   },
-  screenHeader: {
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  listContent: {
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-
-  // Toast error — design.md §7.7
-  errorToast: {
+  headerBar: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.errorTint,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.error,
-    borderRadius: 4,
-    padding: 12,
-    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
-
-  // Kartu riwayat — permukaan statis: radius 4px (design.md §5)
-  card: {
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.paperRaised,
-    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.e1,
+  },
+  headerTitle: {
+    color: colors.ink,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  btnNewReport: {
+    backgroundColor: colors.paperRaised,
+    borderRadius: 16,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: colors.rule,
-    marginBottom: 16,
-    overflow: 'hidden',
   },
-  cardHeader: {
+  btnNewReportText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.action,
+  },
+  searchBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: colors.paperRaised,
+    borderRadius: 9999,
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingVertical: 10,
+    gap: 10,
+    marginBottom: 16,
+    ...shadows.e1,
   },
-  deleteBtn: {
-    // tap target ≥44×44 dipenuhi via hitSlop (design.md §11)
-    padding: 4,
+  searchInput: {
+    flex: 1,
+    padding: 0,
+    color: colors.ink,
   },
-
-  // Preview teks — design.md §9.4
-  previewText: {
-    ...typography.body,
-    color: colors.inkSoft,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+  monthCard: {
+    backgroundColor: colors.paperRaised,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
   },
-
-  // Garis pemisah 1px — design.md §5 (bukan shadow)
-  rule: {
+  monthHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  monthTitle: {
+    color: colors.ink,
+    fontSize: 16,
+  },
+  divider: {
     height: 1,
     backgroundColor: colors.rule,
+    marginVertical: 12,
   },
-
-  // Baris aksi di bawah kartu
-  cardActions: {
+  itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 10,
+    gap: 10,
   },
-  actionBtn: {
+  checkIcon: {
+    width: 28,
+    alignItems: 'center',
+  },
+  itemContent: {
     flex: 1,
-    flexDirection: 'row',
+  },
+  itemDate: {
+    color: colors.inkSoft,
+    fontSize: 11,
+  },
+  itemActivity: {
+    color: colors.ink,
+    fontSize: 14,
+    marginTop: 2,
+  },
+  emptyWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 44,              // tap target minimum 44px — design.md §11
-    backgroundColor: 'transparent',
-  },
-  actionDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: colors.rule,
-  },
-
-  // Empty state — design.md §10
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 80,
+    marginTop: 60,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   emptyTitle: {
-    marginBottom: 8,
-    textAlign: 'center',
+    color: colors.ink,
+    marginTop: 8,
   },
-  emptySubtitle: {
-    textAlign: 'center',
-    paddingHorizontal: 32,
+  emptyDesc: {
     color: colors.inkSoft,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  btnStartNow: {
+    backgroundColor: colors.action,
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    marginTop: 12,
+  },
+  btnStartNowText: {
+    color: colors.onAction,
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
