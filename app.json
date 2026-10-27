@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/logo.jpg",
+      "image": "./assets/splash-screen.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "com.monevapp.app",
+      "versionCode": 6,
       "jsEngine": "hermes",
       "enableProguardInReleaseBuilds": true,
       "adaptiveIcon": {
@@ -25,7 +26,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "splash": {
-        "image": "./assets/logo.jpg",
+        "image": "./assets/splash-screen.png",
         "resizeMode": "contain",
         "backgroundColor": "#FFFFFF"
       },

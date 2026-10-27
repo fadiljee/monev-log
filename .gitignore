@@ -34,6 +34,7 @@ local.properties
 *.keystore
 !debug.keystore
 .kotlin/
+Android/
 
 # node.js
 #
@@ -81,6 +82,10 @@ yarn-error.log
 secrets.*
 config.local.js
 config.local.ts
+key.properties
+google-services.json
+GoogleService-Info.plist
+*.jks
 
 # Yarn
 .yarn/*

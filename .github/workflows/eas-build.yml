@@ -1,0 +1,58 @@
+name: Expo EAS Build
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm i -g eas-cli
+
+      # Expo authentication – requires EXPO_TOKEN secret (generated via `eas token:create`)
+      - name: Authenticate with Expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas login --token $EXPO_TOKEN
+
+      - name: Build APK (preview profile)
+        # You can change the profile to "apk" or "production" as needed
+        run: eas build --platform android --profile preview --non-interactive
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eas-build-output
+          path: ./
+
+  # Optional: build production APK
+  # build-android-production:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'npm'
+  #     - run: npm ci
+  #     - run: npm i -g eas-cli
+  #     - env:
+  #         EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+  #       run: eas login --token $EXPO_TOKEN
+  #     - run: eas build --platform android --profile production --non-interactive
+

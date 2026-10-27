@@ -3,6 +3,7 @@ import { View, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { NavigationContainer } from '@react-navigation/native';
 
 import { colors } from './src/theme/colors';
 import {
@@ -64,56 +65,58 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
-      <View style={styles.container}>
-        {/* Konten Tab Aktif */}
-        <View style={styles.tabContent}>
-          {activeTab === 0 && (
-            <HomeScreen
-              onOpenCreateReport={() => setActiveOverlay('create_report')}
-              onOpenHistory={() => setActiveOverlay('history')}
-              onOpenNotifications={() => setActiveTab(1)}
+    <NavigationContainer>
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
+        <View style={styles.container}>
+          {/* Konten Tab Aktif */}
+          <View style={styles.tabContent}>
+            {activeTab === 0 && (
+              <HomeScreen
+                onOpenCreateReport={() => setActiveOverlay('create_report')}
+                onOpenHistory={() => setActiveOverlay('history')}
+                onOpenNotifications={() => setActiveTab(1)}
+              />
+            )}
+            {activeTab === 1 && <AlarmScreen />}
+            {activeTab === 2 && <StatsScreen />}
+            {activeTab === 3 && (
+              <ProfileScreen onOpenHistory={() => setActiveOverlay('history')} />
+            )}
+          </View>
+
+          {/* Bottom Tab Navigation Bar (4 Tab) */}
+          {!activeOverlay && (
+            <BottomTabBar
+              activeIndex={activeTab}
+              onTabPress={(idx) => setActiveTab(idx)}
             />
           )}
-          {activeTab === 1 && <AlarmScreen />}
-          {activeTab === 2 && <StatsScreen />}
-          {activeTab === 3 && (
-            <ProfileScreen onOpenHistory={() => setActiveOverlay('history')} />
+
+          {/* OVERLAY SCREEN: Buat Laporan */}
+          {activeOverlay === 'create_report' && (
+            <View style={StyleSheet.absoluteFill}>
+              <CreateReportScreen
+                onBack={() => setActiveOverlay(null)}
+                onReportCreated={() => {
+                  // Berhasil dibuat
+                }}
+              />
+            </View>
+          )}
+
+          {/* OVERLAY SCREEN: Riwayat Laporan */}
+          {activeOverlay === 'history' && (
+            <View style={StyleSheet.absoluteFill}>
+              <HistoryScreen
+                onBack={() => setActiveOverlay(null)}
+                onOpenCreateReport={() => setActiveOverlay('create_report')}
+              />
+            </View>
           )}
         </View>
-
-        {/* Bottom Tab Navigation Bar (4 Tab) */}
-        {!activeOverlay && (
-          <BottomTabBar
-            activeIndex={activeTab}
-            onTabPress={(idx) => setActiveTab(idx)}
-          />
-        )}
-
-        {/* OVERLAY SCREEN: Buat Laporan */}
-        {activeOverlay === 'create_report' && (
-          <View style={StyleSheet.absoluteFill}>
-            <CreateReportScreen
-              onBack={() => setActiveOverlay(null)}
-              onReportCreated={() => {
-                // Berhasil dibuat
-              }}
-            />
-          </View>
-        )}
-
-        {/* OVERLAY SCREEN: Riwayat Laporan */}
-        {activeOverlay === 'history' && (
-          <View style={StyleSheet.absoluteFill}>
-            <HistoryScreen
-              onBack={() => setActiveOverlay(null)}
-              onOpenCreateReport={() => setActiveOverlay('create_report')}
-            />
-          </View>
-        )}
-      </View>
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </NavigationContainer>
   );
 }
 

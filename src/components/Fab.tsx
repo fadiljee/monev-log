@@ -4,6 +4,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   useSharedValue,
+  SharedValue,
 } from 'react-native-reanimated';
 import { PenLine } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -12,7 +13,7 @@ import { shadows } from '../theme/shadows';
 
 interface FabProps {
   onPress: () => void;
-  scrollDirection?: Animated.SharedValue<number>; // -1: down, 1: up
+  scrollDirection?: SharedValue<number>; // -1: down, 1: up
 }
 
 export default function Fab({ onPress, scrollDirection }: FabProps) {
