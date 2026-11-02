@@ -15,23 +15,8 @@ const STORAGE_KEY_STATUS = '@monev_attendance_status';
 export const AVAILABLE_SOUNDS: AlarmSoundItem[] = [
   {
     id: 'danger_alarm.mp3',
-    label: 'Danger Alarm (Utama)',
-    description: 'Alarm bahaya intensif looping hingga absen terkonfirmasi',
-  },
-  {
-    id: 'absen_alarm.wav',
-    label: 'Absen Alert (Kustom)',
-    description: 'Nada dering kustom Monev 4-nada tegas',
-  },
-  {
-    id: 'chime.wav',
-    label: 'Melodic Chime',
-    description: 'Dua nada lembut bersahabat',
-  },
-  {
-    id: 'default',
-    label: 'Nada Dering Sistem',
-    description: 'Suara notifikasi standar perangkat',
+    label: 'Danger Alarm (Eksklusif)',
+    description: 'Alarm bahaya intensif looping hingga tombol Sudah Absen ditekan',
   },
 ];
 

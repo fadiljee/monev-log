@@ -135,7 +135,6 @@ def get_notification_sound_identifier(sound):
 
 test("Danger-Alarm.mp3 dinormalisasi ke 'danger_alarm'", get_notification_sound_identifier('Danger-Alarm.mp3') == 'danger_alarm')
 test("danger_alarm.mp3 dinormalisasi ke 'danger_alarm'", get_notification_sound_identifier('danger_alarm.mp3') == 'danger_alarm')
-test("absen_alarm.wav dinormalisasi ke 'absen_alarm'", get_notification_sound_identifier('absen_alarm.wav') == 'absen_alarm')
 test("default mengembalikan True (suara sistem)", get_notification_sound_identifier('default') is True)
 
 # ----------------------------------------------------
@@ -146,18 +145,15 @@ print(f"\n{BOLD}5. Menguji Keberadaan Berkas Fisik Suara & Android Resources:{RE
 danger_asset = os.path.exists("assets/sounds/Danger-Alarm.mp3")
 danger_lower_asset = os.path.exists("assets/sounds/danger_alarm.mp3")
 danger_res_raw = os.path.exists("android/app/src/main/res/raw/danger_alarm.mp3")
-absen_raw = os.path.exists("android/app/src/main/res/raw/absen_alarm.wav")
-chime_raw = os.path.exists("android/app/src/main/res/raw/chime.wav")
 
 test("Berkas assets/sounds/Danger-Alarm.mp3 ada", danger_asset)
 test("Berkas assets/sounds/danger_alarm.mp3 ada", danger_lower_asset)
 test("Berkas android/app/src/main/res/raw/danger_alarm.mp3 ada", danger_res_raw)
-test("Berkas android/app/src/main/res/raw/absen_alarm.wav ada", absen_raw)
-test("Berkas android/app/src/main/res/raw/chime.wav ada", chime_raw)
+test("Danger Alarm adalah suara eksklusif proyek", danger_asset and danger_res_raw)
 
 if danger_asset:
     size_mb = os.path.getsize("assets/sounds/Danger-Alarm.mp3") / (1024 * 1024)
-    test("Ukuran Danger-Alarm.mp3 valid (~82.5 MB, ~1 jam loop)", size_mb > 80, f"{size_mb:.1f} MB")
+    test("Ukuran Danger-Alarm.mp3 terkompresi optimal (< 5 MB, git-friendly)", 1.5 < size_mb < 5.0, f"{size_mb:.2f} MB")
 
 # ----------------------------------------------------
 # 6. TEST PENGHAPUSAN FITUR DI PROFILE

@@ -653,7 +653,7 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
                 <CheckCircle2 color={colors.success} size={18} />
                 <View style={{ flex: 1 }}>
                   <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
-                    Danger Alarm Audio (82.5 MB)
+                    Danger Alarm Audio (2.1 MB)
                   </Text>
                   <Text style={[typography.meta, { color: colors.inkSoft }]}>
                     Berkas Danger-Alarm.mp3 terpasang & terhubung ke Android Raw

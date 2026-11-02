@@ -31,8 +31,6 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 export type AlarmSoundOption =
   | 'danger_alarm.mp3'
   | 'Danger-Alarm.mp3'
-  | 'absen_alarm.wav'
-  | 'chime.wav'
   | 'default';
 
 export interface AlarmSoundItem {

@@ -43,9 +43,7 @@
           "color": "#14407F",
           "sounds": [
             "./assets/sounds/danger_alarm.mp3",
-            "./assets/sounds/Danger-Alarm.mp3",
-            "./assets/sounds/absen_alarm.wav",
-            "./assets/sounds/chime.wav"
+            "./assets/sounds/Danger-Alarm.mp3"
           ]
         }
       ]
