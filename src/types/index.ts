@@ -28,7 +28,12 @@ export interface UserProfile {
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
-export type AlarmSoundOption = 'absen_alarm.wav' | 'chime.wav' | 'default';
+export type AlarmSoundOption =
+  | 'danger_alarm.mp3'
+  | 'Danger-Alarm.mp3'
+  | 'absen_alarm.wav'
+  | 'chime.wav'
+  | 'default';
 
 export interface AlarmSoundItem {
   id: AlarmSoundOption;
@@ -43,6 +48,7 @@ export interface AlarmSettings {
   endHour: number; // default: 24 (24:00 WIB)
   intervalMinutes: number; // default: 30
   sound: AlarmSoundOption;
+  volume: number; // default: 100 (0 - 100%)
 }
 
 export interface AttendanceStatus {

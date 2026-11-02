@@ -40,6 +40,7 @@ import {
   getActiveScheduledAlarmsAsync,
   AVAILABLE_SOUNDS,
   DEFAULT_ALARM_SETTINGS,
+  isWorkday,
 } from '../services/alarm';
 import { AlarmSettings, AlarmSoundOption, AttendanceStatus } from '../types';
 
@@ -119,7 +120,7 @@ export default function SettingsScreen() {
       await saveAlarmSettings(updated);
 
       if (value) {
-        showToast('Jadwal alarm aktif: 16:00 – 24:00 WIB (Tiap 30 mnt)');
+        showToast('Jadwal alarm aktif: Senin – Jumat, 16:00 – 24:00 WIB');
       } else {
         showToast('Alarm pengingat absen dinonaktifkan.');
       }
@@ -219,7 +220,7 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={typography.body}>Alarm Pengingat Absen</Text>
               <Text style={[typography.meta, { color: colors.inkSoft, marginTop: 2 }]}>
-                Mulai 16:00 – 24:00 WIB (Interval tiap 30 mnt)
+                Senin – Jumat, 16:00 – 24:00 WIB (Interval tiap 30 mnt)
               </Text>
             </View>
           </View>
@@ -284,7 +285,9 @@ export default function SettingsScreen() {
             <View style={styles.unconfirmedInfoBox}>
               <Text style={[typography.meta, { color: colors.inkSoft, marginBottom: 8 }]}>
                 {alarmSettings.isEnabled
-                  ? `Sistem aktif mengingatkan (${scheduledCount} jadwal tersisa hari ini). Notifikasi memiliki tombol cepat "Sudah Absen".`
+                  ? !isWorkday(new Date())
+                    ? 'Hari ini akhir pekan (Sabtu/Minggu). Alarm libur dan otomatis aktif kembali hari Senin.'
+                    : `Sistem aktif mengingatkan (${scheduledCount} jadwal tersisa hari ini). Notifikasi memiliki tombol cepat "Sudah Absen".`
                   : 'Alarm saat ini nonaktif.'}
               </Text>
               <TouchableOpacity

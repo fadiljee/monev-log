@@ -28,6 +28,7 @@ import {
   getAttendanceStatusToday,
   confirmAttendanceToday,
   cancelAttendanceToday,
+  isWorkday,
 } from '../services/alarm';
 import { Report } from '../types';
 
@@ -68,9 +69,10 @@ export default function HomeScreen({
       ? 'Selamat sore'
       : 'Selamat malam';
 
+  const isWeekday = isWorkday(new Date());
   const isNight = currentHour >= 18 || currentHour < 5;
   const isAfterWork = currentHour >= 16;
-  const showAlarmWarning = isAfterWork && !isAttendanceDone;
+  const showAlarmWarning = isWeekday && isAfterWork && !isAttendanceDone;
 
   const todayDateStr = new Intl.DateTimeFormat('id-ID', {
     weekday: 'long',
@@ -241,7 +243,7 @@ export default function HomeScreen({
             {/* Checklist Absen Sore */}
             <TaskCard
               title="Absen Sore"
-              subtitle="Alarm 16:00 – 24:00 WIB"
+              subtitle={isWeekday ? 'Alarm 16:00 – 24:00 WIB (Senin – Jumat)' : 'Libur (Alarm aktif Senin – Jumat)'}
               done={isAttendanceDone}
               onToggle={handleToggleAttendance}
               isWarning={showAlarmWarning}

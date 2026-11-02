@@ -13,6 +13,7 @@ import {
 } from './src/services/alarm';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
+import AppSplashScreen from './src/components/AppSplashScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import AlarmScreen from './src/screens/AlarmScreen';
 import StatsScreen from './src/screens/StatsScreen';
@@ -23,6 +24,7 @@ import BottomTabBar from './src/components/BottomTabBar';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
+  const [isAppLoading, setIsAppLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(0); // 0: Beranda, 1: Alarm, 2: Statistik, 3: Profil
   const [activeOverlay, setActiveOverlay] = useState<'create_report' | 'history' | null>(null);
 
@@ -49,9 +51,9 @@ export default function App() {
     };
   }, []);
 
-  // Tunggu pengecekan onboarding awal
-  if (isOnboarded === null) {
-    return <View style={styles.splash} />;
+  // Tampilkan Splash Screen Loading selama inisialisasi awal (minimal ~2.4 detik agar tidak terlalu cepat)
+  if (isAppLoading || isOnboarded === null) {
+    return <AppSplashScreen onFinish={() => setIsAppLoading(false)} />;
   }
 
   // Jika pertama kali buka aplikasi -> Tampilkan Welcome Screen

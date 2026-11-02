@@ -7,9 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-screen.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#0F2F5E"
     },
     "ios": {
       "supportsTablet": true
@@ -26,9 +25,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "splash": {
-        "image": "./assets/splash-screen.png",
         "resizeMode": "contain",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#0F2F5E"
       },
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
@@ -44,6 +42,8 @@
           "icon": "./assets/icon.png",
           "color": "#14407F",
           "sounds": [
+            "./assets/sounds/danger_alarm.mp3",
+            "./assets/sounds/Danger-Alarm.mp3",
             "./assets/sounds/absen_alarm.wav",
             "./assets/sounds/chime.wav"
           ]

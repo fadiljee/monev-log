@@ -14,6 +14,11 @@ const STORAGE_KEY_STATUS = '@monev_attendance_status';
 
 export const AVAILABLE_SOUNDS: AlarmSoundItem[] = [
   {
+    id: 'danger_alarm.mp3',
+    label: 'Danger Alarm (Utama)',
+    description: 'Alarm bahaya intensif looping hingga absen terkonfirmasi',
+  },
+  {
     id: 'absen_alarm.wav',
     label: 'Absen Alert (Kustom)',
     description: 'Nada dering kustom Monev 4-nada tegas',
@@ -36,8 +41,20 @@ export const DEFAULT_ALARM_SETTINGS: AlarmSettings = {
   startMinute: 0,
   endHour: 24, // 24:00 WIB
   intervalMinutes: 30, // Nagging interval tiap 30 menit
-  sound: 'absen_alarm.wav',
+  sound: 'danger_alarm.mp3',
+  volume: 100, // Volume 100%
 };
+
+/**
+ * Helper untuk normalisasi nama suara notifikasi sesuai platform
+ */
+export function getNotificationSoundIdentifier(sound: AlarmSoundOption): string | boolean {
+  if (sound === 'default') return true;
+  if (Platform.OS === 'android') {
+    return sound.toLowerCase().replace(/\.[^/.]+$/, '').replace(/[^a-z0-9_]/g, '_');
+  }
+  return sound;
+}
 
 // ── Notification Handler (Foreground Presentation) ──
 Notifications.setNotificationHandler({
@@ -57,6 +74,37 @@ export function getLocalDateString(d: Date = new Date()): string {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Mengecek apakah tanggal tertentu merupakan hari kerja (Senin s.d. Jumat).
+ * getDay(): 0 = Minggu, 1 = Senin, 2 = Selasa, 3 = Rabu, 4 = Kamis, 5 = Jumat, 6 = Sabtu.
+ * Alarm hanya berbunyi pada hari Senin - Jumat.
+ */
+export function isWorkday(d: Date = new Date()): boolean {
+  const day = d.getDay();
+  return day >= 1 && day <= 5;
+}
+
+/**
+ * Menghitung tanggal hari kerja berikutnya (Senin s.d. Jumat)
+ * pada jam & menit pembuka alarm (default: startHour & startMinute dari settings).
+ * Jika hari ini Jumat, akan melompati Sabtu & Minggu dan mengembalikan hari Senin.
+ */
+export function getNextWorkdayDate(
+  from: Date = new Date(),
+  targetHour = 16,
+  targetMinute = 0
+): Date {
+  const next = new Date(from);
+  next.setDate(next.getDate() + 1);
+  next.setHours(targetHour, targetMinute, 0, 0);
+
+  // Jika jatuh pada hari Sabtu (6) atau Minggu (0), terus maju hingga mencapai hari Senin (1)
+  while (!isWorkday(next)) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next;
 }
 
 // ── Top-Level Task Definition untuk Background Action Button ──
@@ -111,7 +159,8 @@ export async function initAlarmServiceAsync(): Promise<void> {
  * dan Android Notification Channel dengan suara kustom
  */
 export async function setupCategoriesAndChannelsAsync(sound: AlarmSoundOption): Promise<string> {
-  const channelId = `${CHANNEL_ID_PREFIX}-${sound.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const cleanSoundKey = sound.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const channelId = `${CHANNEL_ID_PREFIX}-${cleanSoundKey}`;
 
   try {
     // 1. Kategori notifikasi interaktif (Action Button)
@@ -127,19 +176,18 @@ export async function setupCategoriesAndChannelsAsync(sound: AlarmSoundOption): 
       },
     ]);
 
-    // 2. Android Notification Channel khusus dengan level HIGH dan custom sound
-    // Sesuai PRD §2.D: Level IMPORTANCE_HIGH agar suara kustom berbunyi
+    // 2. Android Notification Channel khusus dengan level MAX dan custom sound
     if (Platform.OS === 'android') {
-      const soundFile = sound === 'default' ? undefined : (Platform.OS === 'android' ? sound.replace(/\.[^/.]+$/, '') : sound);
+      const soundFile = sound === 'default' ? undefined : (getNotificationSoundIdentifier(sound) as string);
       await Notifications.setNotificationChannelAsync(channelId, {
-        name: `Pengingat Absen Monev (${sound === 'default' ? 'Default' : 'Kustom'})`,
-        description: 'Notifikasi pengingat absen sore dan pengisian logbook Monev',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#14407F', // token action v2 — design.md §3.6 (era lama: #1F4D3D)
+        name: `Pengingat Absen Monev (${sound.toLowerCase().includes('danger') ? 'Danger Alarm' : sound === 'default' ? 'Default' : 'Kustom'})`,
+        description: 'Notifikasi pengingat absen sore dan pengisian logbook Monev (Looping hingga absen)',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 500, 250, 500, 250, 500],
+        lightColor: '#DC2626',
         sound: soundFile,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: false,
+        bypassDnd: true,
       });
     }
   } catch (err) {
@@ -259,10 +307,10 @@ export async function confirmAttendanceToday(
       await Notifications.dismissAllNotificationsAsync();
     } catch (_) {}
 
-    // 3. Jadwalkan untuk esok hari
+    // 3. Jadwalkan untuk hari kerja berikutnya (Senin jika hari ini Jumat)
     const settings = await getAlarmSettings();
     if (settings.isEnabled) {
-      await scheduleNextDayAlarmAsync(settings);
+      await scheduleNextWorkdayAlarmAsync(settings);
     }
 
     console.log(`[Alarm] Kehadiran hari ini (${todayKey}) berhasil dikonfirmasi via ${source}.`);
@@ -326,16 +374,28 @@ export function generateNaggingSlots(
 }
 
 /**
- * Sinkronkan jadwal alarm: jika hari baru dan belum absen, jadwalkan hari ini.
+ * Sinkronkan jadwal alarm:
+ * - Jika akhir pekan (Sabtu / Minggu), tidak menjadwalkan alarm hari ini dan memastikan jadwal hari kerja berikutnya (Senin) siap.
+ * - Jika hari kerja (Senin - Jumat) dan belum absen, jadwalkan nagging slots hari ini.
+ * - Jika hari kerja dan sudah absen, jadwalkan hari kerja berikutnya.
  */
 export async function syncScheduleForCurrentDayAsync(): Promise<void> {
   const settings = await getAlarmSettings();
   if (!settings.isEnabled) return;
 
+  const now = new Date();
+
+  // Jika hari ini akhir pekan (Sabtu / Minggu), batalkan alarm hari ini dan pastikan hari Senin sudah terjadwal
+  if (!isWorkday(now)) {
+    await cancelTodayAttendanceAlarmsAsync();
+    await scheduleNextWorkdayAlarmAsync(settings);
+    return;
+  }
+
   const status = await getAttendanceStatusToday();
   if (status.isConfirmed) {
-    // Hari ini sudah absen, pastikan jadwal besok siap
-    await scheduleNextDayAlarmAsync(settings);
+    // Hari ini sudah absen, pastikan jadwal hari kerja berikutnya siap
+    await scheduleNextWorkdayAlarmAsync(settings);
   } else {
     // Belum absen, jadwalkan sisa alarm hari ini
     await scheduleAttendanceAlarmsAsync(settings);
@@ -344,6 +404,7 @@ export async function syncScheduleForCurrentDayAsync(): Promise<void> {
 
 /**
  * Jadwalkan alarm untuk siklus hari ini (Nagging Mode 16:00 - 24:00 WIB)
+ * HANYA aktif dan berbunyi pada hari kerja: Senin s.d. Jumat.
  * Sesuai PRD §2.A:
  * - Pemicu mulai 16:00 WIB
  * - Interval pengingat (16:00, 16:30, 17:00, dst. s.d. 24:00 WIB)
@@ -354,6 +415,14 @@ export async function scheduleAttendanceAlarmsAsync(settings: AlarmSettings): Pr
   await cancelTodayAttendanceAlarmsAsync();
 
   const now = new Date();
+
+  // Pastikan alarm HANYA berbunyi pada hari kerja (Senin s.d. Jumat)
+  if (!isWorkday(now)) {
+    console.log('[Alarm] Hari ini adalah akhir pekan (Sabtu/Minggu). Alarm hanya berbunyi dari Senin sampai Jumat.');
+    await scheduleNextWorkdayAlarmAsync(settings);
+    return 0;
+  }
+
   const todayKey = getLocalDateString(now);
   const slots = generateNaggingSlots(
     settings.startHour,
@@ -375,14 +444,16 @@ export async function scheduleAttendanceAlarmsAsync(settings: AlarmSettings): Pr
 
     const timeLabel = `${String(slot.hour).padStart(2, '0')}:${String(slot.minute).padStart(2, '0')}`;
 
+    const soundIdentifier = getNotificationSoundIdentifier(settings.sound);
+
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '⏰ Waktunya Absen Sore & Isi Logbook!',
-          body: `Pengingat Absen Monev (${timeLabel} WIB). Tekan " Sudah Absen" jika Anda sudah absen & input kegiatan.`,
-          sound: settings.sound !== 'default' ? (Platform.OS === 'android' ? settings.sound.replace(/\.[^/.]+$/, '') : settings.sound) : true,
+          title: '🚨 Waktunya Absen Sore & Isi Logbook!',
+          body: `Pengingat Absen Monev (${timeLabel} WIB). Alarm berdering looping! Tekan " Sudah Absen" untuk mematikan alarm.`,
+          sound: soundIdentifier,
           categoryIdentifier: CATEGORY_ATTENDANCE_ALARM,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
+          priority: Notifications.AndroidNotificationPriority.MAX,
           data: {
             tag: 'monev_attendance_alarm',
             date: todayKey,
@@ -401,57 +472,61 @@ export async function scheduleAttendanceAlarmsAsync(settings: AlarmSettings): Pr
     }
   }
 
-  // Juga jadwalkan pembuka untuk esok hari pukul 16:00 (siklus otomatis berikutnya)
-  await scheduleNextDayAlarmAsync(settings);
+  // Juga jadwalkan pembuka untuk hari kerja berikutnya pukul 16:00 (misal: Senin jika hari ini Jumat)
+  await scheduleNextWorkdayAlarmAsync(settings);
 
-  console.log(`[Alarm] Berhasil menjadwalkan ${scheduledCount} notifikasi nagging untuk hari ini.`);
+  console.log(`[Alarm] Berhasil menjadwalkan ${scheduledCount} notifikasi nagging untuk hari ini (${todayKey}).`);
   return scheduledCount;
 }
 
 /**
- * Jadwalkan alarm pembuka untuk esok hari pukul 16:00
+ * Jadwalkan alarm pembuka untuk hari kerja berikutnya (Senin - Jumat) pukul startHour:startMinute
  */
-export async function scheduleNextDayAlarmAsync(settings: AlarmSettings): Promise<void> {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(settings.startHour, settings.startMinute, 0, 0);
-
-  const tomorrowKey = getLocalDateString(tomorrow);
+export async function scheduleNextWorkdayAlarmAsync(settings: AlarmSettings): Promise<void> {
+  const nextWorkday = getNextWorkdayDate(new Date(), settings.startHour, settings.startMinute);
+  const nextWorkdayKey = getLocalDateString(nextWorkday);
   const channelId = `${CHANNEL_ID_PREFIX}-${settings.sound.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
   try {
-    // Batalkan trigger besok yang lama agar tidak ganda
+    // Batalkan trigger pada hari kerja berikutnya yang lama agar tidak ganda
     const all = await Notifications.getAllScheduledNotificationsAsync();
     for (const item of all) {
       const data = item.content.data;
-      if (data?.tag === 'monev_attendance_alarm' && data?.date === tomorrowKey) {
+      if (data?.tag === 'monev_attendance_alarm' && data?.date === nextWorkdayKey) {
         await Notifications.cancelScheduledNotificationAsync(item.identifier);
       }
     }
 
+    const timeLabel = `${String(settings.startHour).padStart(2, '0')}:${String(settings.startMinute).padStart(2, '0')}`;
+    const soundIdentifier = getNotificationSoundIdentifier(settings.sound);
+
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Waktunya Absen Sore & Isi Logbook!',
-        body: `Pengingat Absen Monev (16:00 WIB). Jangan lupa absen sore dan isi logbook harian Anda!`,
-        sound: settings.sound !== 'default' ? settings.sound : true,
+        title: '🚨 Waktunya Absen Sore & Isi Logbook!',
+        body: `Pengingat Absen Monev (${timeLabel} WIB). Jangan lupa absen sore dan isi logbook harian Anda! Tekan " Sudah Absen" untuk mematikan alarm.`,
+        sound: soundIdentifier,
         categoryIdentifier: CATEGORY_ATTENDANCE_ALARM,
-        priority: Notifications.AndroidNotificationPriority.HIGH,
+        priority: Notifications.AndroidNotificationPriority.MAX,
         data: {
           tag: 'monev_attendance_alarm',
-          date: tomorrowKey,
-          slot: '16:00',
+          date: nextWorkdayKey,
+          slot: timeLabel,
         },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: tomorrow,
+        date: nextWorkday,
         channelId,
       },
     });
+    console.log(`[Alarm] Alarm hari kerja berikutnya berhasil dijadwalkan untuk: ${nextWorkdayKey} ${timeLabel} WIB.`);
   } catch (err) {
-    console.warn('[Alarm] Gagal menjadwalkan alarm esok hari:', err);
+    console.warn('[Alarm] Gagal menjadwalkan alarm hari kerja berikutnya:', err);
   }
 }
+
+// Alias untuk kompatibilitas ke belakang
+export const scheduleNextDayAlarmAsync = scheduleNextWorkdayAlarmAsync;
 
 /**
  * Batalkan seluruh alarm yang terjadwal untuk hari ini
@@ -522,14 +597,15 @@ export async function testTriggerAlarmAsync(delaySeconds = 3): Promise<string> {
 
   const settings = await getAlarmSettings();
   const channelId = await setupCategoriesAndChannelsAsync(settings.sound);
+  const soundIdentifier = getNotificationSoundIdentifier(settings.sound);
 
   const identifier = await Notifications.scheduleNotificationAsync({
     content: {
-      title: '[TEST] Waktunya Absen Sore & Isi Logbook!',
-      body: 'Ini adalah uji coba Alarm Absen Monev. Tekan tombol " Sudah Absen" di bawah untuk menguji pembatalan alarm!',
-      sound: settings.sound !== 'default' ? settings.sound : true,
+      title: '🚨 [UJI COBA] Danger Alarm Absen Monev!',
+      body: 'Ini adalah uji coba Alarm Absen Monev dengan Danger Alarm. Tekan tombol " Sudah Absen" di bawah untuk mematikan alarm!',
+      sound: soundIdentifier,
       categoryIdentifier: CATEGORY_ATTENDANCE_ALARM,
-      priority: Notifications.AndroidNotificationPriority.HIGH,
+      priority: Notifications.AndroidNotificationPriority.MAX,
       data: {
         tag: 'monev_attendance_alarm_test',
         isTest: true,

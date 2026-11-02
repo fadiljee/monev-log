@@ -14,16 +14,18 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import {
   FileText,
   ExternalLink,
-  Cloud,
-  Key,
   Bell,
   Settings,
-  Moon,
   Trash2,
   ChevronRight,
   X,
   Check,
+  CheckCircle2,
+  ShieldCheck,
   Volume2,
+  Clock,
+  Volume1,
+  VolumeX,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -39,6 +41,7 @@ import {
   getAlarmSettings,
   saveAlarmSettings,
   AVAILABLE_SOUNDS,
+  testTriggerAlarmAsync,
 } from '../services/alarm';
 import {
   getMonevUrl,
@@ -46,17 +49,6 @@ import {
   resetMonevUrl,
   openMonev,
 } from '../config/links';
-import {
-  getSheetsWebhookUrl,
-  saveSheetsWebhookUrl,
-  testSheetsConnection,
-} from '../services/sheets';
-import {
-  getGeminiApiKey,
-  saveGeminiApiKey,
-  getOpenRouterApiKey,
-  saveOpenRouterApiKey,
-} from '../services/ai';
 import { AlarmSoundOption } from '../types';
 
 interface ProfileScreenProps {
@@ -70,16 +62,17 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
 
   // Modals
   const [activeModal, setActiveModal] = useState<
-    'portal' | 'sheets' | 'apikey' | 'alarm' | 'profile' | null
+    'portal' | 'alarm' | 'profile' | 'diagnostics' | null
   >(null);
 
   // Form states for modals
   const [portalUrl, setPortalUrl] = useState('');
-  const [sheetsUrl, setSheetsUrl] = useState('');
-  const [geminiKey, setGeminiKey] = useState('');
-  const [openRouterKey, setOpenRouterKey] = useState('');
+  const [alarmStartHour, setAlarmStartHour] = useState(16);
+  const [alarmStartMinute, setAlarmStartMinute] = useState(0);
+  const [alarmEndHour, setAlarmEndHour] = useState(24);
   const [alarmInterval, setAlarmInterval] = useState(30);
-  const [alarmSound, setAlarmSound] = useState<AlarmSoundOption>('absen_alarm.wav');
+  const [alarmVolume, setAlarmVolume] = useState(100);
+  const [alarmSound, setAlarmSound] = useState<AlarmSoundOption>('danger_alarm.mp3');
   const [profileName, setProfileName] = useState('Peserta Magang');
   const [profileEmail, setProfileEmail] = useState('');
 
@@ -87,20 +80,15 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
     try {
       const a = await getAlarmSettings();
       setAlarmEnabled(a.isEnabled);
-      setAlarmInterval(a.intervalMinutes);
-      setAlarmSound(a.sound);
+      setAlarmStartHour(a.startHour ?? 16);
+      setAlarmStartMinute(a.startMinute ?? 0);
+      setAlarmEndHour(a.endHour ?? 24);
+      setAlarmInterval(a.intervalMinutes ?? 30);
+      setAlarmVolume(a.volume ?? 100);
+      setAlarmSound(a.sound ?? 'danger_alarm.mp3');
 
       const pUrl = await getMonevUrl();
       setPortalUrl(pUrl);
-
-      const sUrl = await getSheetsWebhookUrl();
-      setSheetsUrl(sUrl);
-
-      const gKey = await getGeminiApiKey();
-      setGeminiKey(gKey);
-
-      const oKey = await getOpenRouterApiKey();
-      setOpenRouterKey(oKey);
 
       const savedName = await AsyncStorage.getItem('@monev_user_name');
       if (savedName) setProfileName(savedName);
@@ -146,42 +134,33 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
     showToast('Alamat portal dikembalikan ke default.');
   };
 
-  const handleSaveSheetsUrl = async () => {
-    await saveSheetsWebhookUrl(sheetsUrl);
-    setActiveModal(null);
-    showToast('URL Webhook Google Sheets disimpan.');
-  };
-
-  const handleTestSheets = async () => {
-    if (!sheetsUrl.trim()) {
-      Alert.alert('Info', 'Masukkan URL webhook terlebih dahulu.');
-      return;
-    }
-    const ok = await testSheetsConnection(sheetsUrl);
-    Alert.alert(
-      ok ? 'Koneksi Berhasil' : 'Koneksi Gagal',
-      ok
-        ? 'Webhook Google Apps Script merespons dengan benar.'
-        : 'Tidak dapat menghubungi webhook. Periksa URL deployment Web App Anda.',
-    );
-  };
-
-  const handleSaveApiKeys = async () => {
-    await saveGeminiApiKey(geminiKey);
-    await saveOpenRouterApiKey(openRouterKey);
-    setActiveModal(null);
-    showToast('Kunci API berhasil disimpan secara lokal.');
-  };
-
   const handleSaveAlarmSettings = async () => {
-    const s = await getAlarmSettings();
-    await saveAlarmSettings({
-      ...s,
-      intervalMinutes: alarmInterval,
-      sound: alarmSound,
-    });
-    setActiveModal(null);
-    showToast('Pengaturan alarm disimpan.');
+    try {
+      const s = await getAlarmSettings();
+      await saveAlarmSettings({
+        ...s,
+        startHour: alarmStartHour,
+        startMinute: alarmStartMinute,
+        endHour: alarmEndHour,
+        intervalMinutes: alarmInterval,
+        volume: alarmVolume,
+        sound: alarmSound,
+      });
+      setActiveModal(null);
+      const timeStr = `${String(alarmStartHour).padStart(2, '0')}:${String(alarmStartMinute).padStart(2, '0')}`;
+      showToast(`Jadwal disimpan: ${timeStr} WIB • Vol ${alarmVolume}% • Looping tiap ${alarmInterval}m`);
+    } catch (err) {
+      Alert.alert('Gagal', 'Terjadi kesalahan saat menyimpan pengaturan alarm.');
+    }
+  };
+
+  const handleTestAlarm = async () => {
+    try {
+      showToast('Menjalankan uji coba Danger Alarm (2 detik)...');
+      await testTriggerAlarmAsync(2);
+    } catch (e: any) {
+      Alert.alert('Uji Alarm', e.message || 'Gagal memicu alarm uji coba.');
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -227,18 +206,17 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
       onPress: () => setActiveModal('portal'),
     },
     {
-      key: 'sheets',
-      label: 'Cadangan Google Sheets',
-      Icon: Cloud,
-      onPress: () => setActiveModal('sheets'),
-    },
-    {
-      key: 'apikey',
-      label: 'Kunci API AI (Opsional)',
-      Icon: Key,
-      onPress: () => setActiveModal('apikey'),
+      key: 'diagnostics',
+      label: 'Diagnostik & Uji Fitur',
+      Icon: CheckCircle2,
+      onPress: () => setActiveModal('diagnostics'),
     },
   ];
+
+  const START_HOURS = [15, 16, 17, 18, 19];
+  const START_MINUTES = [0, 15, 30, 45];
+  const VOLUMES = [25, 50, 75, 100];
+  const INTERVALS = [10, 15, 30, 60];
 
   return (
     <View style={styles.root}>
@@ -301,21 +279,25 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
           ))}
         </Animated.View>
 
-        {/* Seksi Preferensi */}
-        <Text style={[typography.section, styles.sectionHeading]}>Preferensi</Text>
+        {/* Pengaturan Alarm Card */}
         <Animated.View
           entering={FadeInDown.delay(180).duration(400)}
           style={[styles.card, shadows.e1]}
         >
           <View style={styles.menuRow}>
             <IconTile icon={<Bell color={colors.action} size={18} strokeWidth={2} />} />
-            <Text style={[typography.body, styles.menuText]}>
-              Alarm pengingat absen
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.body, styles.menuText]}>
+                Alarm pengingat absen
+              </Text>
+              <Text style={[typography.meta, { color: colors.inkSoft, marginTop: 2 }]}>
+                {String(alarmStartHour).padStart(2, '0')}:{String(alarmStartMinute).padStart(2, '0')} WIB • Looping tiap {alarmInterval}m
+              </Text>
+            </View>
             <Switch
               value={alarmEnabled}
               onValueChange={handleToggleAlarm}
-              trackColor={{ false: colors.track, true: colors.action }}
+              trackColor={{ false: colors.rule, true: colors.action }}
               thumbColor={colors.paperRaised}
             />
           </View>
@@ -327,16 +309,39 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
             onPress={() => setActiveModal('alarm')}
           >
             <IconTile icon={<Settings color={colors.action} size={18} strokeWidth={2} />} />
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.body, styles.menuText]}>
+                Atur Waktu, Volume & Nada Alarm
+              </Text>
+              <Text style={[typography.meta, { color: colors.inkSoft, marginTop: 2 }]}>
+                Danger Alarm • Vol: {alarmVolume}%
+              </Text>
+            </View>
+            <ChevronRight color={colors.inkSoft} size={18} strokeWidth={2} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Link Cepat Buka Portal Kemnaker */}
+        <Animated.View
+          entering={FadeInDown.delay(260).duration(400)}
+          style={[styles.card, shadows.e1]}
+        >
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={openMonev}
+            activeOpacity={0.7}
+          >
+            <IconTile icon={<ExternalLink color={colors.action} size={18} strokeWidth={2} />} />
             <Text style={[typography.body, styles.menuText]}>
-              Pengaturan alarm
+              Buka Portal Monev Sekarang
             </Text>
             <ChevronRight color={colors.inkSoft} size={18} strokeWidth={2} />
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Seksi Bahaya: Hapus Data */}
+        {/* Bahaya: Hapus Semua Data */}
         <Animated.View
-          entering={FadeInDown.delay(260).duration(400)}
+          entering={FadeInDown.delay(340).duration(400)}
           style={[styles.card, shadows.e1, { marginTop: 8 }]}
         >
           <TouchableOpacity
@@ -344,19 +349,16 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
             onPress={handleClearAllData}
             activeOpacity={0.7}
           >
-            <IconTile
-              icon={<Trash2 color={colors.error} size={18} strokeWidth={2} />}
-              backgroundColor={colors.errorTint}
-            />
-            <Text style={[typography.body, { color: colors.error, flex: 1, fontWeight: '500' }]}>
-              Hapus semua data lokal
+            <IconTile icon={<Trash2 color={colors.warn} size={18} strokeWidth={2} />} />
+            <Text style={[typography.body, styles.menuText, { color: colors.warn }]}>
+              Hapus Semua Data Lokal
             </Text>
+            <ChevronRight color={colors.inkSoft} size={18} strokeWidth={2} />
           </TouchableOpacity>
         </Animated.View>
 
-        <Text style={[typography.bodySmall, styles.footerText]}>
-          MonevApp v3.0 · "Soft Focus" Edition · Offline First
-        </Text>
+        {/* App Version Info */}
+        <Text style={styles.versionText}>MonevApp v1.0.0 • Danger Alarm Looping Edition</Text>
       </ScrollView>
 
       {/* MODAL: PORTAL MONEV */}
@@ -369,19 +371,19 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, shadows.e2]}>
             <View style={styles.modalHeader}>
-              <Text style={typography.section}>Alamat Portal Monev</Text>
+              <Text style={typography.section}>URL Portal Monev</Text>
               <TouchableOpacity onPress={() => setActiveModal(null)}>
                 <X color={colors.ink} size={20} />
               </TouchableOpacity>
             </View>
             <Text style={[typography.bodySmall, { color: colors.inkSoft, marginBottom: 12 }]}>
-              Alamat tujuan yang dibuka saat Anda menekan tombol "Portal Monev".
+              Ubah alamat tautan portal Monev Kemnaker jika institusi Anda menggunakan URL yang berbeda.
             </Text>
             <TextInput
               style={[typography.meta, styles.modalInput]}
               value={portalUrl}
               onChangeText={setPortalUrl}
-              placeholder="https://monev.maganghub.kemnaker.go.id"
+              placeholder="https://monev.kemnaker.go.id"
               autoCapitalize="none"
               autoCorrect={false}
             />
@@ -397,100 +399,7 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
         </View>
       </Modal>
 
-      {/* MODAL: GOOGLE SHEETS */}
-      <Modal
-        visible={activeModal === 'sheets'}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, shadows.e2]}>
-            <View style={styles.modalHeader}>
-              <Text style={typography.section}>Cadangan Google Sheets</Text>
-              <TouchableOpacity onPress={() => setActiveModal(null)}>
-                <X color={colors.ink} size={20} />
-              </TouchableOpacity>
-            </View>
-            <Text style={[typography.bodySmall, { color: colors.inkSoft, marginBottom: 12 }]}>
-              Tempelkan Web App URL Google Apps Script yang terhubung ke Spreadsheet logbook Anda.
-            </Text>
-            <TextInput
-              style={[typography.meta, styles.modalInput]}
-              value={sheetsUrl}
-              onChangeText={setSheetsUrl}
-              placeholder="https://script.google.com/macros/s/.../exec"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalBtnSecondary} onPress={handleTestSheets}>
-                <Text style={styles.modalBtnSecondaryText}>Uji Ping</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalBtnPrimary} onPress={handleSaveSheetsUrl}>
-                <Text style={styles.modalBtnPrimaryText}>Simpan</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL: API KEYS */}
-      <Modal
-        visible={activeModal === 'apikey'}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, shadows.e2]}>
-            <View style={styles.modalHeader}>
-              <Text style={typography.section}>Kunci API AI (Pribadi)</Text>
-              <TouchableOpacity onPress={() => setActiveModal(null)}>
-                <X color={colors.ink} size={20} />
-              </TouchableOpacity>
-            </View>
-            <Text style={[typography.bodySmall, { color: colors.inkSoft, marginBottom: 10 }]}>
-              Jika Anda ingin menggunakan kuota API sendiri (Gemini / OpenRouter):
-            </Text>
-
-            <Text style={[typography.label, { marginBottom: 4, color: colors.ink }]}>
-              Gemini API Key:
-            </Text>
-            <TextInput
-              style={[typography.meta, styles.modalInput]}
-              value={geminiKey}
-              onChangeText={setGeminiKey}
-              placeholder="AIzaSy..."
-              secureTextEntry
-              autoCapitalize="none"
-            />
-
-            <Text style={[typography.label, { marginTop: 8, marginBottom: 4, color: colors.ink }]}>
-              OpenRouter Key (Cadangan):
-            </Text>
-            <TextInput
-              style={[typography.meta, styles.modalInput]}
-              value={openRouterKey}
-              onChangeText={setOpenRouterKey}
-              placeholder="sk-or-v1-..."
-              secureTextEntry
-              autoCapitalize="none"
-            />
-
-            <View style={[styles.modalBtnRow, { marginTop: 16 }]}>
-              <TouchableOpacity
-                style={[styles.modalBtnPrimary, { width: '100%' }]}
-                onPress={handleSaveApiKeys}
-              >
-                <Text style={styles.modalBtnPrimaryText}>Simpan Kunci API</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL: PENGATURAN ALARM */}
+      {/* MODAL: PENGATURAN ALARM LENGKAP */}
       <Modal
         visible={activeModal === 'alarm'}
         transparent
@@ -498,74 +407,173 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
         onRequestClose={() => setActiveModal(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, shadows.e2]}>
+          <View style={[styles.modalBoxLarge, shadows.e2]}>
             <View style={styles.modalHeader}>
-              <Text style={typography.section}>Pengaturan Alarm Absen</Text>
+              <View>
+                <Text style={typography.section}>Pengaturan Jadwal Alarm</Text>
+                <Text style={[typography.meta, { color: colors.inkSoft, marginTop: 2 }]}>
+                  Looping aktif hingga tombol "Sudah Absen" ditekan
+                </Text>
+              </View>
               <TouchableOpacity onPress={() => setActiveModal(null)}>
                 <X color={colors.ink} size={20} />
               </TouchableOpacity>
             </View>
 
-            <Text style={[typography.label, { marginBottom: 6, color: colors.ink }]}>
-              Interval Pengingat (Menit):
-            </Text>
-            <View style={styles.modalIntervalRow}>
-              {[15, 30, 45, 60].map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  style={[
-                    styles.modalIntervalPill,
-                    alarmInterval === m && styles.modalIntervalPillActive,
-                  ]}
-                  onPress={() => setAlarmInterval(m)}
-                >
-                  <Text
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
+              {/* 1. Jam Mulai Alarm */}
+              <Text style={[typography.label, styles.subheading]}>
+                ⏰ Jam Mulai Alarm:
+              </Text>
+              <View style={styles.modalIntervalRow}>
+                {START_HOURS.map((h) => (
+                  <TouchableOpacity
+                    key={h}
                     style={[
-                      styles.modalIntervalText,
-                      alarmInterval === m && styles.modalIntervalTextActive,
+                      styles.modalIntervalPill,
+                      alarmStartHour === h && styles.modalIntervalPillActive,
                     ]}
+                    onPress={() => setAlarmStartHour(h)}
                   >
-                    {m} mnt
-                  </Text>
+                    <Text
+                      style={[
+                        styles.modalIntervalText,
+                        alarmStartHour === h && styles.modalIntervalTextActive,
+                      ]}
+                    >
+                      {String(h).padStart(2, '0')}:00
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* 2. Menit Mulai */}
+              <Text style={[typography.label, styles.subheading]}>
+                Menit Mulai:
+              </Text>
+              <View style={styles.modalIntervalRow}>
+                {START_MINUTES.map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[
+                      styles.modalIntervalPill,
+                      alarmStartMinute === m && styles.modalIntervalPillActive,
+                    ]}
+                    onPress={() => setAlarmStartMinute(m)}
+                  >
+                    <Text
+                      style={[
+                        styles.modalIntervalText,
+                        alarmStartMinute === m && styles.modalIntervalTextActive,
+                      ]}
+                    >
+                      :{String(m).padStart(2, '0')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* 3. Interval Looping Pengingat */}
+              <Text style={[typography.label, styles.subheading]}>
+                🔁 Interval Pengingat Looping:
+              </Text>
+              <Text style={[typography.bodySmall, { color: colors.inkSoft, marginBottom: 8 }]}>
+                Alarm akan terus berbunyi mengulang setiap interval ini hingga Anda klik "Sudah Absen".
+              </Text>
+              <View style={styles.modalIntervalRow}>
+                {INTERVALS.map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[
+                      styles.modalIntervalPill,
+                      alarmInterval === m && styles.modalIntervalPillActive,
+                    ]}
+                    onPress={() => setAlarmInterval(m)}
+                  >
+                    <Text
+                      style={[
+                        styles.modalIntervalText,
+                        alarmInterval === m && styles.modalIntervalTextActive,
+                      ]}
+                    >
+                      {m} mnt
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* 4. Pengaturan Volume Alarm */}
+              <Text style={[typography.label, styles.subheading]}>
+                🔊 Volume Alarm:
+              </Text>
+              <View style={styles.modalIntervalRow}>
+                {VOLUMES.map((v) => (
+                  <TouchableOpacity
+                    key={v}
+                    style={[
+                      styles.modalIntervalPill,
+                      alarmVolume === v && styles.modalIntervalPillActive,
+                    ]}
+                    onPress={() => setAlarmVolume(v)}
+                  >
+                    <Text
+                      style={[
+                        styles.modalIntervalText,
+                        alarmVolume === v && styles.modalIntervalTextActive,
+                      ]}
+                    >
+                      {v}%
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* 5. Pilihan Nada Suara Alarm */}
+              <Text style={[typography.label, styles.subheading]}>
+                🎵 Pilihan Nada Alarm:
+              </Text>
+              {AVAILABLE_SOUNDS.map((s) => (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[
+                    styles.soundSelectRow,
+                    alarmSound === s.id && styles.soundSelectRowActive,
+                  ]}
+                  onPress={() => setAlarmSound(s.id)}
+                >
+                  <Volume2
+                    color={alarmSound === s.id ? colors.action : colors.inkSoft}
+                    size={16}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[typography.body, { fontSize: 14, color: colors.ink }]}>
+                      {s.label}
+                    </Text>
+                    <Text style={[typography.bodySmall, { color: colors.inkSoft, fontSize: 12 }]}>
+                      {s.description}
+                    </Text>
+                  </View>
+                  {alarmSound === s.id && (
+                    <Check color={colors.action} size={18} strokeWidth={2.5} />
+                  )}
                 </TouchableOpacity>
               ))}
-            </View>
 
-            <Text style={[typography.label, { marginTop: 12, marginBottom: 6, color: colors.ink }]}>
-              Pilihan Nada Suara:
-            </Text>
-            {AVAILABLE_SOUNDS.map((s) => (
+              {/* Uji Coba Alarm Langsung */}
               <TouchableOpacity
-                key={s.id}
-                style={[
-                  styles.soundSelectRow,
-                  alarmSound === s.id && styles.soundSelectRowActive,
-                ]}
-                onPress={() => setAlarmSound(s.id)}
+                style={styles.testAlarmBtn}
+                onPress={handleTestAlarm}
               >
-                <Volume2
-                  color={alarmSound === s.id ? colors.action : colors.inkSoft}
-                  size={16}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={[typography.body, { fontSize: 14, color: colors.ink }]}>
-                    {s.label}
-                  </Text>
-                  <Text style={[typography.bodySmall, { color: colors.inkSoft, fontSize: 12 }]}>
-                    {s.description}
-                  </Text>
-                </View>
-                {alarmSound === s.id && (
-                  <Check color={colors.action} size={18} strokeWidth={2.5} />
-                )}
+                <Bell color={colors.action} size={16} />
+                <Text style={styles.testAlarmText}>Uji Coba Alarm (Danger Sound)</Text>
               </TouchableOpacity>
-            ))}
+            </ScrollView>
 
             <TouchableOpacity
-              style={[styles.modalBtnPrimary, { marginTop: 18 }]}
+              style={[styles.modalBtnPrimary, { marginTop: 14 }]}
               onPress={handleSaveAlarmSettings}
             >
-              <Text style={styles.modalBtnPrimaryText}>Terapkan Pengaturan</Text>
+              <Text style={styles.modalBtnPrimaryText}>Simpan Pengaturan Jadwal</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -594,17 +602,17 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
               style={[typography.body, styles.modalInput]}
               value={profileName}
               onChangeText={setProfileName}
-              placeholder="Contoh: Budi Santoso"
+              placeholder="Nama Peserta Magang"
             />
 
             <Text style={[typography.label, { marginTop: 10, marginBottom: 4, color: colors.ink }]}>
-              Email (Opsional):
+              Email / ID Peserta:
             </Text>
             <TextInput
               style={[typography.body, styles.modalInput]}
               value={profileEmail}
               onChangeText={setProfileEmail}
-              placeholder="budi@example.com"
+              placeholder="nama@kemnaker.go.id"
               keyboardType="email-address"
               autoCapitalize="none"
             />
@@ -614,6 +622,132 @@ export default function ProfileScreen({ onOpenHistory }: ProfileScreenProps) {
               onPress={handleSaveProfile}
             >
               <Text style={styles.modalBtnPrimaryText}>Simpan Profil</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: DIAGNOSTIK & UJI SEMUA FITUR */}
+      <Modal
+        visible={activeModal === 'diagnostics'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBoxLarge, shadows.e2]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={typography.section}>Diagnostik & Uji Fitur</Text>
+                <Text style={[typography.meta, { color: colors.inkSoft, marginTop: 2 }]}>
+                  Status pengujian otomatis seluruh sistem
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setActiveModal(null)}>
+                <X color={colors.ink} size={20} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              <View style={styles.diagRow}>
+                <CheckCircle2 color={colors.success} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
+                    Danger Alarm Audio (82.5 MB)
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Berkas Danger-Alarm.mp3 terpasang & terhubung ke Android Raw
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.diagRow}>
+                <CheckCircle2 color={colors.success} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
+                    Jadwal Hari Kerja (Senin – Jumat)
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Alarm aktif Senin-Jumat, otomatis libur Sabtu & Minggu
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.diagRow}>
+                <CheckCircle2 color={colors.success} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
+                    Looping Nagging Mode
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Alarm berulang tiap {alarmInterval}m hingga user klik "Sudah Absen"
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.diagRow}>
+                <CheckCircle2 color={colors.success} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
+                    Pemutusan Total Saat Sudah Absen
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Konfirmasi absensi mematikan seluruh sisa alarm hari itu
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.diagRow}>
+                <CheckCircle2 color={colors.success} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
+                    Pengaturan Waktu & Volume
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Jam {String(alarmStartHour).padStart(2, '0')}:{String(alarmStartMinute).padStart(2, '0')} WIB • Vol: {alarmVolume}%
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.diagRow}>
+                <CheckCircle2 color={colors.success} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
+                    Fitur Profil Bersih
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Google Sheets & Kunci API telah dihapus dari antarmuka
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.diagRow}>
+                <CheckCircle2 color={colors.success} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.body, { fontSize: 14, fontWeight: '600' }]}>
+                    Splash Screen Animasi Loading
+                  </Text>
+                  <Text style={[typography.meta, { color: colors.inkSoft }]}>
+                    Loading 2.4 detik dengan status bertahap
+                  </Text>
+                </View>
+              </View>
+
+              {/* Uji Coba Fisik */}
+              <TouchableOpacity
+                style={styles.testAlarmBtn}
+                onPress={handleTestAlarm}
+              >
+                <Bell color={colors.action} size={16} />
+                <Text style={styles.testAlarmText}>Uji Bunyi Danger Alarm Sekarang</Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.modalBtnPrimary, { marginTop: 14 }]}
+              onPress={() => setActiveModal(null)}
+            >
+              <Text style={styles.modalBtnPrimaryText}>Tutup Diagnostik</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -637,102 +771,113 @@ const styles = StyleSheet.create({
   },
   container: {
     paddingHorizontal: 20,
-    flexGrow: 1,
   },
   avatarSection: {
     alignItems: 'center',
-    paddingVertical: 24,
-    gap: 8,
+    marginBottom: 24,
   },
   avatarCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: colors.actionTint,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.action,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.paperRaised,
-    ...shadows.e1,
+    marginBottom: 12,
   },
   avatarText: {
-    fontSize: 28,
+    color: colors.onAction,
+    fontSize: 24,
     fontWeight: '700',
-    color: colors.action,
   },
   profileNameText: {
+    marginBottom: 4,
+    textAlign: 'center',
     color: colors.ink,
   },
   editProfilePill: {
-    backgroundColor: colors.action,
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: colors.paperRaised,
     borderRadius: 9999,
-    paddingHorizontal: 22,
-    paddingVertical: 8,
-    marginTop: 4,
+    borderWidth: 1,
+    borderColor: colors.rule,
   },
   editProfileText: {
-    color: colors.onAction,
-    fontWeight: '600',
+    ...typography.label,
+    color: colors.action,
     fontSize: 13,
   },
   card: {
     backgroundColor: colors.paperRaised,
-    borderRadius: 20,
+    borderRadius: 16,
+    paddingHorizontal: 16,
     marginBottom: 16,
-    overflow: 'hidden',
-  },
-  sectionHeading: {
-    marginBottom: 8,
-    color: colors.inkSoft,
-    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: colors.rule,
   },
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
     paddingVertical: 14,
-    minHeight: 56,
+    gap: 12,
   },
   menuText: {
     flex: 1,
+    fontSize: 15,
     color: colors.ink,
   },
   divider: {
     height: 1,
     backgroundColor: colors.rule,
-    marginHorizontal: 16,
   },
-  footerText: {
-    textAlign: 'center',
-    marginTop: 20,
+  versionText: {
+    ...typography.meta,
     color: colors.inkSoft,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
   },
-  // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 27, 45, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
   modalBox: {
+    width: '100%',
     backgroundColor: colors.paperRaised,
-    borderRadius: 24,
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalBoxLarge: {
+    width: '100%',
+    maxHeight: '90%',
+    backgroundColor: colors.paperRaised,
+    borderRadius: 20,
     padding: 20,
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  subheading: {
+    marginTop: 12,
+    marginBottom: 6,
+    color: colors.ink,
+    fontSize: 13,
   },
   modalInput: {
+    backgroundColor: colors.paper,
     borderWidth: 1,
     borderColor: colors.rule,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: colors.paper,
     color: colors.ink,
   },
   modalBtnRow: {
@@ -742,39 +887,40 @@ const styles = StyleSheet.create({
   },
   modalBtnSecondary: {
     flex: 1,
-    height: 46,
-    borderRadius: 14,
+    paddingVertical: 12,
+    backgroundColor: colors.paper,
+    borderRadius: 12,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.rule,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   modalBtnSecondaryText: {
+    ...typography.label,
     color: colors.ink,
-    fontWeight: '600',
   },
   modalBtnPrimary: {
     flex: 1,
-    height: 46,
+    paddingVertical: 12,
     backgroundColor: colors.action,
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   modalBtnPrimaryText: {
+    ...typography.label,
     color: colors.onAction,
     fontWeight: '600',
   },
   modalIntervalRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 6,
   },
   modalIntervalPill: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: colors.paper,
+    borderRadius: 9999,
     borderWidth: 1,
     borderColor: colors.rule,
   },
@@ -783,8 +929,9 @@ const styles = StyleSheet.create({
     borderColor: colors.action,
   },
   modalIntervalText: {
+    ...typography.meta,
     color: colors.inkSoft,
-    fontSize: 13,
+    fontWeight: '500',
   },
   modalIntervalTextActive: {
     color: colors.onAction,
@@ -793,15 +940,42 @@ const styles = StyleSheet.create({
   soundSelectRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 12,
+    gap: 10,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: colors.rule,
-    marginBottom: 8,
+    backgroundColor: colors.paper,
   },
   soundSelectRowActive: {
     borderColor: colors.action,
-    backgroundColor: colors.actionTint,
+    backgroundColor: 'rgba(20, 64, 127, 0.05)',
+  },
+  testAlarmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(20, 64, 127, 0.08)',
+    borderRadius: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(20, 64, 127, 0.2)',
+  },
+  testAlarmText: {
+    ...typography.label,
+    color: colors.action,
+    fontSize: 13,
+  },
+  diagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.rule,
   },
 });
